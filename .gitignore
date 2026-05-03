@@ -1,0 +1,16 @@
+
+# Credentials & API keys
+google_credentials.json
+google_cse.json
+serpapi.json
+
+# Runtime state & output
+seen_jobs.json
+job_results_log.txt
+job_results_*.txt
+scheduler_run.log
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
