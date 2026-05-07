@@ -121,6 +121,16 @@ SINGLE_COUNTRY_RE = re.compile(
     r"|remote[\s,\-]+uk|remote[\s,\-]+australia)[,\.\s\-]*(only|based)?\s*$",
     re.IGNORECASE,
 )
+# Broader location checks for compound restricted strings like "USA, Canada"
+_LOC_WORLDWIDE_RE = re.compile(
+    r"\b(worldwide|global|anywhere|international)\b", re.IGNORECASE
+)
+_LOC_RESTRICTED_RE = re.compile(
+    r"\b(usa|united states?|canada|uk|united kingdom|australia"
+    r"|north america|americas?|latin america|latam)\b"
+    r"|\bu\.?s\.?a?\b",
+    re.IGNORECASE,
+)
 
 TITLE_RELEVANT_RE = re.compile(
     r"implementation|configuration|onboarding|integration specialist"
@@ -151,8 +161,13 @@ TITLE_BLOCKED_RE = re.compile(
 TITLE_GEO_BLOCKED_RE = re.compile(
     r"\(\s*remote[\s,\-]+(us|usa|united states?|canada|north america|uk|united kingdom|australia)\s*\)"
     r"|\bremote[\s\-]+(us|usa|united states?)\b"
+    r"|\bus[\s\-]+remote\b"                           # "US Remote" reversed order
     r"|\b(us|usa|united states?|canada)\s*only\b"
     r"|\(us\)|\(usa\)|\(north america\)"
+    r"|\(\s*(united states?|canada|uk|united kingdom|australia|north america)\s*\)"
+    r"|\bamericas?\b"                                 # "Americas" / "America" region
+    r"|\b(st\.?\s*louis|toronto|vancouver|montreal)\b"
+    r"|\(\s*\w[\w\s]+,\s*philippines\s*\)"
     r"|\blatam\b",
     re.IGNORECASE,
 )
@@ -206,7 +221,12 @@ def fetch_json(url: str, headers: dict | None = None):
 
 
 def normalize_url(url: str) -> str:
-    return url.strip().rstrip("/").lower().split("?")[0]
+    url = url.strip().rstrip("/").lower().split("?")[0]
+    # Rippling serves the same job with locale prefixes (e.g. /pt-BR/, /fr-CA/)
+    url = re.sub(r"(ats\.rippling\.com)/[a-z]{2}-[a-z]{2}/", r"\1/", url)
+    # Lever job URLs sometimes appear with a trailing /apply
+    url = re.sub(r"(jobs\.lever\.co/[^/]+/[^/]+)/apply$", r"\1", url)
+    return url
 
 
 def score_job(title: str, description: str) -> int:
@@ -217,9 +237,12 @@ def score_job(title: str, description: str) -> int:
 
 
 def is_blocked(location: str, description: str, title: str = "") -> bool:
-    if SINGLE_COUNTRY_RE.match(location.strip()):
+    loc = location.strip()
+    if SINGLE_COUNTRY_RE.match(loc):
         return True
-    combined = f"{location} {title} {description}".lower()
+    if loc and not _LOC_WORLDWIDE_RE.search(loc) and _LOC_RESTRICTED_RE.search(loc):
+        return True  # compound restricted locations like "USA, Canada" or "North America"
+    combined = f"{loc} {title} {description}".lower()
     return any(rx.search(combined) for rx in BLOCKED_PATTERNS)
 
 
@@ -350,7 +373,7 @@ def fetch_remotive(term: str) -> list[dict]:
         loc   = j.get("candidate_required_location", "")
         desc  = j.get("description", "")
         title = j.get("title", "")
-        if is_blocked(loc, desc, title):
+        if TITLE_GEO_BLOCKED_RE.search(title) or is_blocked(loc, desc, title):
             continue
         out.append(make_job(
             "Remotive", title, j.get("company_name", ""), loc,
