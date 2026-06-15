@@ -17,10 +17,10 @@ from datetime import datetime
 from pathlib import Path
 
 # ── Paths ─────────────────────────────────────────────────────────────────────
-BASE_DIR     = Path("D:/Joe/JobHunter")
+BASE_DIR     = Path(__file__).parent.absolute()
 SEEN_FILE    = BASE_DIR / "seen_jobs.json"
 LOG_FILE     = BASE_DIR / "job_results_log.txt"
-GSHEET_CREDS  = BASE_DIR / "google_credentials.json"
+GSHEET_CREDS  = Path(r"C:\Users\youso\OneDrive\GoogleCreds\google_credentials.json")
 GSHEET_NAME   = "Remote Job Leads – Youssef"
 GOOGLE_CSE_FILE = BASE_DIR / "google_cse.json"   # {"api_key": "...", "cx": "..."}
 SERPAPI_FILE    = BASE_DIR / "serpapi.json"       # {"api_key": "..."}
@@ -51,7 +51,19 @@ REMOTIVE_TERMS = [
 # ── Search queries ─────────────────────────────────────────────────────────────
 # When Google CSE is active, these run against the 42 domains you configured.
 # When falling back to DuckDuckGo, _DDG_SITES is prepended automatically.
-_NO_LANG = "-french -german -spanish -portuguese -dutch -mandarin -czech -polish -ukrainian"
+_FOREIGN_LANGUAGES = (
+    r"french|german|spanish|portuguese|italian|dutch|mandarin|chinese|japanese"
+    r"|korean|turkish|hindi|czech|polish|ukrainian|russian|hebrew|persian|farsi|greek"
+    r"|romanian|hungarian|swedish|norwegian|danish|finnish|tagalog|vietnamese|thai"
+    r"|indonesian|malay|bengali|urdu|punjabi|marathi|telugu|tamil|gujarati|kannada"
+    r"|odia|malayalam|sinhala|burmese|khmer|lao|amharic|somali|swahili|zulu|xhosa"
+    r"|afrikaans|yiddish|catalan|basque|galician|welsh|irish|scottish gaelic"
+    r"|breton|kurdish|pashto|dari|uzbek|kazakh|uyghur|tibetan|mongolian"
+    r"|serbian|croatian|bosnian|slovenian|macedonian|bulgarian|albanian"
+    r"|lithuanian|latvian|estonian|georgian|armenian|azerbaijani"
+)
+
+_NO_LANG = " ".join([f"-{lang}" for lang in _FOREIGN_LANGUAGES.split("|") if len(lang) < 12])
 
 CSE_QUERIES = [
     '"implementation specialist" remote',
@@ -75,9 +87,9 @@ _DDG_SITES = (
     "site:boards.greenhouse.io OR site:jobs.lever.co "
     "OR site:jobs.ashbyhq.com OR site:apply.workable.com "
     "OR site:careers.smartrecruiters.com OR site:jobs.jobvite.com "
-    "OR site:deel.com OR site:remote.com OR site:rippling.com "
-    "OR site:hibob.com OR site:personio.com OR site:freshworks.com "
-    "OR site:zendesk.com OR site:bamboohr.com OR site:chargebee.com"
+    "OR site:myworkdayjobs.com OR site:icims.com OR site:breezy.hr "
+    "OR site:applytojob.com OR site:recruitee.com "
+    "OR site:wellfound.com OR site:otta.com OR site:himalayas.app"
 )
 
 # ── Scoring ───────────────────────────────────────────────────────────────────
@@ -100,29 +112,54 @@ HIGH_VALUE_KEYWORDS = [
 ]
 
 # ── Filters ───────────────────────────────────────────────────────────────────
+_FOREIGN_COUNTRIES = (
+    r"united states?|u\.?s\.?a?|usa|canada|united kingdom|uk|australia|new zealand|north america|americas?"
+    r"|india|singapore|japan|south korea|korea|china|hong kong|taiwan|asia|apac"
+    r"|brazil|mexico|colombia|argentina|chile|peru|latam|latin america|south america"
+    r"|germany|france|spain|italy|netherlands|sweden|norway|denmark|finland|europe|eu"
+    r"|ireland|poland|ukraine|czech|romania|hungary|portugal|belgium|austria"
+    r"|switzerland|israel|turkey|saudi arabia|uae|nigeria|kenya|south africa|ghana"
+    r"|philippines|indonesia|malaysia|thailand|vietnam|pakistan|bangladesh"
+    r"|costa rica|nicosia|cyprus"
+)
+
+_FOREIGN_CITIES = (
+    r"london|berlin|paris|amsterdam|sydney|melbourne|dublin|toronto|vancouver"
+    r"|singapore|tokyo|seoul|jakarta|mumbai|delhi|bangalore|bengaluru|hyderabad"
+    r"|s[aã]o paulo|mexico city|tel aviv|istanbul|warsaw|prague|budapest|bucharest"
+    r"|kyiv|athens|lisbon|madrid|barcelona|milan|rome|z[üu]rich|geneva|brussels"
+    r"|copenhagen|stockholm|oslo|helsinki|nairobi|lagos|cape town|johannesburg"
+    r"|bogot[aá]|santiago|lima|bangkok|kuala lumpur|manila|ho chi minh|taipei"
+    r"|beijing|shanghai|nicosia|san francisco|new york|chicago|austin|seattle"
+    r"|boston|denver|atlanta|miami|dallas|houston|phoenix|portland|minneapolis"
+    r"|washington\s*dc|salt lake city|los angeles"
+)
+
+
+
+SPECIFIC_LOCATION_RE = re.compile(
+    rf"\b({_FOREIGN_COUNTRIES})\b"
+    rf"|\b({_FOREIGN_CITIES})\b",
+    re.IGNORECASE,
+)
+
 BLOCKED_PATTERNS = [re.compile(p, re.IGNORECASE) for p in [
     # Region restrictions
-    r"\bus[\s\-]?only\b", r"\bunited states only\b", r"\busa only\b",
-    r"\bcanada only\b", r"\buk only\b", r"\bunited kingdom only\b",
-    r"\beu only\b", r"\beurope only\b", r"\baustralia only\b",
-    r"\bnorth america only\b",
-    r"must (be|reside|live) in (the )?(us|usa|uk|canada|australia|europe|eu)\b",
-    r"(us|usa|uk|canada|eu|europe|australia)[- ]based (only|required|candidates)",
-    r"authorized to work in the (us|usa|united states)",
-    r"eligible to work in the (us|usa|united states)",
-    r"right to work in (the )?(uk|united kingdom)",
+    rf"\b({_FOREIGN_COUNTRIES})\s*only\b",
+    rf"must (be|reside|live|be located) in (the )?({_FOREIGN_COUNTRIES})\b",
+    rf"({_FOREIGN_COUNTRIES})[- ]based (only|required|candidates)",
+    rf"authorized to work in (the )?({_FOREIGN_COUNTRIES})",
+    rf"eligible to work in (the )?({_FOREIGN_COUNTRIES})",
+    rf"right to work in (the )?({_FOREIGN_COUNTRIES})",
     r"no.*egypt", r"egypt.*not",
     # Language requirements (Arabic + English only)
-    r"(fluent|proficient|native|speaking|speaker)\s+in\s+(french|german|spanish"
-    r"|portuguese|italian|dutch|mandarin|chinese|japanese|korean|turkish|hindi"
-    r"|czech|polish|ukrainian|russian|hebrew|persian|greek|romanian|hungarian)",
-    r"(french|german|spanish|portuguese|italian|dutch|mandarin|czech|polish"
-    r"|ukrainian|russian|hebrew|turkish|hindi)\s+(speaking|speaker|required|fluency|fluent|\+)",
-    r"must (speak|be fluent in|have proficiency in) (french|german|spanish|portuguese|italian|dutch|czech|polish)",
-    r"bilingual.*(french|german|spanish|portuguese|italian|dutch)",
-    r"\((fluent\s+)?(french|german|spanish|portuguese|italian|dutch|czech|polish"
-    r"|ukrainian|russian|hebrew|turkish|hindi|mandarin)\b",
-    r"\b(french|german|spanish|portuguese|dutch|czech|polish|ukrainian)\s*[\+&]\s*english\b",
+    rf"(fluent|proficient|native|speaking|speaker)\s+in\s+({_FOREIGN_LANGUAGES})\b",
+    rf"\b({_FOREIGN_LANGUAGES})\s+(speaking|speaker|required|fluency|fluent|\+)\b",
+    rf"must (speak|be fluent in|have proficiency in) ({_FOREIGN_LANGUAGES})\b",
+    rf"bilingual.*({_FOREIGN_LANGUAGES})\b",
+    rf"\((fluent\s+)?({_FOREIGN_LANGUAGES})\b",
+    rf"\b({_FOREIGN_LANGUAGES})\s*[\+&]\s*english\b",
+    rf"english\s*[\+&]\s*({_FOREIGN_LANGUAGES})\b",
     r"\((brazil|india|philippines|pakistan|nigeria|kenya|egypt|manila)\b",
     r"\b(brazil|india|philippines|pakistan|nigeria|kenya)\s*,\s*global\b",
     r"\bmanila\b",   # Manila = Philippines, on-site required
@@ -141,34 +178,7 @@ LOCATION_OPEN_RE = re.compile(
     re.IGNORECASE,
 )
 
-# Specific foreign countries that are NOT Egypt — block when found in the location field
-_FOREIGN_COUNTRIES = (
-    r"united states?|u\.?s\.?a?|usa|canada|united kingdom|australia|new zealand|north america"
-    r"|india|singapore|japan|south korea|korea|china|hong kong|taiwan"
-    r"|brazil|mexico|colombia|argentina|chile|peru"
-    r"|germany|france|spain|italy|netherlands|sweden|norway|denmark|finland"
-    r"|ireland|poland|ukraine|czech|romania|hungary|portugal|belgium|austria"
-    r"|switzerland|israel|turkey|saudi arabia|uae|nigeria|kenya|south africa|ghana"
-    r"|philippines|indonesia|malaysia|thailand|vietnam|pakistan|bangladesh"
-    r"|costa rica|nicosia|cyprus"
-)
-_FOREIGN_CITIES = (
-    r"london|berlin|paris|amsterdam|sydney|melbourne|dublin|toronto|vancouver"
-    r"|singapore|tokyo|seoul|jakarta|mumbai|delhi|bangalore|bengaluru|hyderabad"
-    r"|s[aã]o paulo|mexico city|tel aviv|istanbul|warsaw|prague|budapest|bucharest"
-    r"|kyiv|athens|lisbon|madrid|barcelona|milan|rome|z[üu]rich|geneva|brussels"
-    r"|copenhagen|stockholm|oslo|helsinki|nairobi|lagos|cape town|johannesburg"
-    r"|bogot[aá]|santiago|lima|bangkok|kuala lumpur|manila|ho chi minh|taipei"
-    r"|beijing|shanghai|nicosia|san francisco|new york|chicago|austin|seattle"
-    r"|boston|denver|atlanta|miami|dallas|houston|phoenix|portland|minneapolis"
-    r"|washington\s*dc|salt lake city|los angeles"
-)
 
-SPECIFIC_LOCATION_RE = re.compile(
-    rf"\b({_FOREIGN_COUNTRIES})\b"
-    rf"|\b({_FOREIGN_CITIES})\b",
-    re.IGNORECASE,
-)
 
 # US city + state abbreviation (kept for legacy matching)
 _US_STATES = (
@@ -193,21 +203,17 @@ ONSITE_RE = re.compile(
 
 # Matches geo-restriction phrases embedded in body text / page snippets
 BODY_GEO_BLOCKED_RE = re.compile(
-    r"remote\s*[\(\[]\s*(united states?|u\.?s\.?a?|usa|canada|uk|united kingdom|australia|north america)\s*[\)\]]"
-    r"|\b(united states?|usa|u\.?s\.?a?|canada|uk|united kingdom|australia|north america)\s*only\b"
-    r"|\bonly\s+(us|usa|uk|canada|australia)\s+residents?\b"
-    r"|\bmust\s+(be\s+)?(based|located|residing)\s+in\s+the\s+(us|usa|united states?|uk|canada|australia)\b"
-    r"|\bopen\s+to\s+(us|usa|united states?|canada|uk|australia)\s+residents?\s+only\b"
-    # "open to US-based only" / "US-based candidates only" / "US based only"
-    r"|\bopen\s+to\s+(us|usa|united states?|canada|uk|australia)[\s\-]+based\b"
-    r"|\b(us|usa|united states?|canada|uk|australia)[\s\-]+based\s+(only|candidates|applicants|employees|residents)\b"
-    r"|\bremote\s+position[s]?\s+(are\s+)?open\s+to\s+(the\s+)?(us|usa|united states?)\b"
-    # "Remote Canada", "Remote UK", "Remote USA" as standalone location phrases
-    r"|\bremote\s+(canada|uk|united kingdom|australia|north america)\b"
-    r"|\bremote\s+(us|usa|united states?)\b"
-    r"|\bremote\s+within\s+(?:the\s+)?(?:us|usa|united states?|canada|uk)\b"
-    # "REMOTE - US; ..." or "-REMOTE, USA-" location strings
-    r"|\bremote\s*[-,]\s*(?:us|usa|united states?)\b",
+    rf"remote\s*[\(\[]\s*({_FOREIGN_COUNTRIES})\s*[\)\]]"
+    rf"|\b({_FOREIGN_COUNTRIES})\s*only\b"
+    rf"|\bonly\s+({_FOREIGN_COUNTRIES})\s+residents?\b"
+    rf"|\bmust\s+(be\s+)?(based|located|residing)\s+in\s+(the\s+)?({_FOREIGN_COUNTRIES})\b"
+    rf"|\bopen\s+to\s+({_FOREIGN_COUNTRIES})\s+residents?\s+only\b"
+    rf"|\bopen\s+to\s+({_FOREIGN_COUNTRIES})[\s\-]+based\b"
+    rf"|\b({_FOREIGN_COUNTRIES})[\s\-]+based\s+(only|candidates|applicants|employees|residents)\b"
+    rf"|\bremote\s+position[s]?\s+(are\s+)?open\s+to\s+(the\s+)?({_FOREIGN_COUNTRIES})\b"
+    rf"|\bremote\s+({_FOREIGN_COUNTRIES})\b"
+    rf"|\bremote\s+within\s+(?:the\s+)?({_FOREIGN_COUNTRIES})\b"
+    rf"|\bremote\s*[-,]\s*({_FOREIGN_COUNTRIES})\b",
     re.IGNORECASE,
 )
 
@@ -293,19 +299,14 @@ ROLE_TYPE_BLOCKED_RE = re.compile(
 )
 
 TITLE_GEO_BLOCKED_RE = re.compile(
-    r"\(\s*remote[\s,\-]+(us|usa|united states?|canada|north america|uk|united kingdom|australia)\s*\)"
-    r"|\bremote[\s,\-]+(us|usa|united states?)\b"
-    r"|\b(us|usa|united states?)[\s,\-]+remote\b"        # "US Remote" order
-    r"|\bus[\s\-]+remote\b"                               # "US Remote" reversed order
-    r"|\bremote\s+from\s+(us|usa|united states?|canada)\b"
-    r"|\b(us|usa|united states?|canada|north america)\s*only\b"
-    r"|\(us\)|\(usa\)|\(north america\)"
-    r"|\(\s*(united states?|canada|uk|united kingdom|australia|north america)\s*\)"
-    r"|\bamericas?\b"                                     # "Americas" / "America" region
-    r"|\blatam\b"
-    r"|\bnorth\s+america\s*\(remote\)"                    # "North America (Remote)"
-    r"|\bcanada[\s,\-]+remote\b|\bremote[\s,\-]+canada\b"
-    r"|\btoronto[\s\-]+based\b"
+    rf"\(\s*remote[\s,\-]+({_FOREIGN_COUNTRIES})\s*\)"
+    rf"|\bremote[\s,\-]+({_FOREIGN_COUNTRIES})\b"
+    rf"|\b({_FOREIGN_COUNTRIES})[\s,\-]+remote\b"        # "US Remote" order
+    rf"|\bremote\s+from\s+({_FOREIGN_COUNTRIES})\b"
+    rf"|\b({_FOREIGN_COUNTRIES})\s*only\b"
+    rf"|\(\s*({_FOREIGN_COUNTRIES})\s*\)"
+    rf"|\b({_FOREIGN_COUNTRIES})\s*\(remote\)"                    # "North America (Remote)"
+    rf"|\b({_FOREIGN_COUNTRIES})[\s,\-]+remote\b|\bremote[\s,\-]+({_FOREIGN_COUNTRIES})\b"
     r"|\b(st\.?\s*louis|toronto|vancouver|montreal)\b"
     r"|\(\s*\w[\w\s]+,\s*philippines\s*\)"
     # specific city+province/country in parens or after comma
@@ -320,9 +321,7 @@ TITLE_GEO_BLOCKED_RE = re.compile(
     r"|[\-\s]+united states?\s*$"
     r"|\(\s*united states?\s*\)"
     # Country names appearing in parentheses in title — "(Remote, South Africa)", "(UK)", etc.
-    r"|\(\s*(?:remote\s*,\s*)?(?:south africa|india|philippines|pakistan|nigeria|kenya"
-    r"|brazil|mexico|indonesia|bangladesh|uk|united kingdom|australia|new zealand"
-    r"|germany|france|spain|netherlands|poland|ukraine|israel|turkey|singapore)\b"
+    rf"|\(\s*(?:remote\s*,\s*)?({_FOREIGN_COUNTRIES})\b"
     # Explicit city/location after dash in title — "Engineer - Dallas, TX"
     r"|[-–]\s*(?:dallas|houston|austin|chicago|new york|san francisco|los angeles"
     r"|seattle|boston|denver|atlanta|miami|phoenix|portland|minneapolis)\b"
@@ -334,13 +333,12 @@ TITLE_GEO_BLOCKED_RE = re.compile(
 
 # Aggregator / noise domains – block regardless of path
 AGGREGATOR_DOMAINS = re.compile(
-    r"\b(leverdemo|remoterocketship|dailyremote|kickstartremote|remotely\.jobs|flexjobs"
+    r"\b(leverdemo|remoterocketship|kickstartremote|remotely\.jobs|flexjobs"
     r"|virtualvocations|swooped\.co|workingnomads|talantix|nofluffjobs"
     r"|wearedistributed|euremotejobs|nodesk\.co|jobspresso|remotehub"
-    r"|pangian|4dayweek|justremote|workstep|zippia|builtin\.com"
-    r"|himalayas\.app|wellfound|angel\.co|otta\.com|jobgether"
-    r"|snagajob|simplyhired|careerbuilder|monster\.com|glassdoor"
-    r"|ziprecruiter|linkedin\.com|indeed\.com|reddit\.com|quora\.com"
+    r"|pangian|4dayweek|workstep|zippia|builtin\.com"
+    r"|jobgether|snagajob|simplyhired|careerbuilder|monster\.com|glassdoor"
+    r"|ziprecruiter|reddit\.com|quora\.com"
     r"|medium\.com|gartner\.com|g2\.com|capterra\.com|bing\.com)\b",
     re.IGNORECASE,
 )
@@ -405,9 +403,7 @@ def _playwright_geo_blocked(url: str, timeout_ms: int = 12000) -> bool:
             # Restricted countries/regions — any of these appearing as a standalone
             # location (in a structured field or as a short phrase) means blocked.
             _GEO_LOCATION_RE = re.compile(
-                r"\b(united states?|u\.?s\.?a?|usa|canada|uk|united kingdom"
-                r"|australia|north america|pakistan|india|philippines|nigeria"
-                r"|kenya|bangladesh|nepal|sri lanka)\b",
+                rf"\b({_FOREIGN_COUNTRIES})\b",
                 re.IGNORECASE,
             )
 
@@ -821,6 +817,52 @@ def fetch_remotive(term: str) -> list[dict]:
     return out
 
 
+# ── Source: WeWorkRemotely (RSS) ──────────────────────────────────────────────
+def fetch_weworkremotely() -> list[dict]:
+    url = "https://weworkremotely.com/categories/remote-customer-support-jobs.rss"
+    try:
+        req = urllib.request.Request(url, headers={"User-Agent": "JobSearch/2.0"})
+        with urllib.request.urlopen(req, timeout=15) as r:
+            xml_data = r.read().decode("utf-8", errors="ignore")
+        
+        import xml.etree.ElementTree as ET
+        root = ET.fromstring(xml_data)
+        out = []
+        for item in root.findall(".//item"):
+            title = item.findtext("title", "")
+            link = item.findtext("link", "")
+            desc = item.findtext("description", "")
+            pub_date = item.findtext("pubDate", "")
+            
+            company = ""
+            if ":" in title:
+                company, title = title.split(":", 1)
+                title = title.strip()
+            
+            # WWR jobs are implicitly worldwide/remote, but we still check the body for hidden restrictions
+            if TITLE_GEO_BLOCKED_RE.search(title) or is_blocked("Remote", desc, title):
+                continue
+            if BODY_GEO_BLOCKED_RE.search(desc):
+                continue
+            
+            sc = score_job(title, desc)
+            if sc < 1:
+                continue
+            
+            tags = ["SIDE_ROLE"] if _SIDE_ROLE_RE.search(f"{title} {desc}") else []
+            job = make_job("WeWorkRemotely", title, company, "Remote", link, normalize_date(pub_date), sc, ", ".join(tags))
+            
+            if SOFT_GEO_PREFERRED_RE.search(f"{title} {desc}"):
+                job["score"] = max(0, job["score"] - 2)
+                job["tags"]  = ", ".join(filter(None, [job["tags"], "GEO_SOFT_BLOCK"]))
+            
+            out.append(job)
+        return out
+    except Exception as e:
+        print(f"  [warn] fetch failed WWR: {e}")
+        return []
+
+
 # ── Source: DuckDuckGo ────────────────────────────────────────────────────────
 def _load_cse_creds() -> tuple[str, str] | tuple[None, None]:
     """Return (api_key, cx) from google_cse.json, or (None, None) if not configured."""
@@ -1074,6 +1116,11 @@ def main():
     for term in REMOTIVE_TERMS:
         print(f"[>] {term}")
         all_jobs.extend(fetch_remotive(term))
+
+    # ── WeWorkRemotely ─────────────────────────────────────────────────────
+    print("\n--- WeWorkRemotely ---")
+    print(f"[>] RSS Feed")
+    all_jobs.extend(fetch_weworkremotely())
 
     # ── Career site search ─────────────────────────────────────────────────
     if serpapi_key:
