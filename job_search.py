@@ -37,10 +37,15 @@ REMOTIVE_TERMS = [
     "customer success manager",
     "customer success specialist",
     "customer support specialist",
+    "customer support agent",
+    "support specialist",
     "technical support specialist",
-    "technical account manager",
-    "solutions engineer",
+    "technical support agent",
     "customer onboarding",
+    # Part-time / contractor variants — surface side-role opportunities
+    "customer support part time",
+    "customer support contractor",
+    "technical support part time",
 ]
 
 # ── Search queries ─────────────────────────────────────────────────────────────
@@ -56,9 +61,14 @@ CSE_QUERIES = [
     '"customer success manager" saas remote',
     '"customer success specialist" saas remote',
     '"customer support specialist" saas remote',
-    '"technical account manager" saas remote',
+    '"technical support specialist" saas remote',
+    '"support specialist" saas remote',
+    # Part-time / contractor queries — surface side-role opportunities
+    '"customer support" part-time remote',
+    '"customer support" contract remote',
 ]
-# 8 queries/day × 30 days = 240/month — within SerpAPI free tier (250/month)
+# 11 queries/day × 30 days = 330/month — slightly over SerpAPI free tier (250/month);
+# consider dropping 2 lower-value queries if quota becomes an issue
 
 # DuckDuckGo fallback: prepend site: targets so we still hit company/ATS pages
 _DDG_SITES = (
@@ -85,7 +95,8 @@ HIGH_VALUE_KEYWORDS = [
     "onboarding specialist", "implementation manager",
     "technical onboarding", "customer onboarding",
     "customer success manager", "customer success specialist",
-    "technical support specialist", "technical account manager",
+    "technical support specialist",
+    "support specialist",
 ]
 
 # ── Filters ───────────────────────────────────────────────────────────────────
@@ -112,13 +123,103 @@ BLOCKED_PATTERNS = [re.compile(p, re.IGNORECASE) for p in [
     r"\((fluent\s+)?(french|german|spanish|portuguese|italian|dutch|czech|polish"
     r"|ukrainian|russian|hebrew|turkish|hindi|mandarin)\b",
     r"\b(french|german|spanish|portuguese|dutch|czech|polish|ukrainian)\s*[\+&]\s*english\b",
+    r"\((brazil|india|philippines|pakistan|nigeria|kenya|egypt|manila)\b",
+    r"\b(brazil|india|philippines|pakistan|nigeria|kenya)\s*,\s*global\b",
+    r"\bmanila\b",   # Manila = Philippines, on-site required
 ]]
 
-SINGLE_COUNTRY_RE = re.compile(
-    r"^(usa|united states?|u\.?s\.?a?|canada|uk|united kingdom|australia"
-    r"|remote[\s,\-]+u\.?s\.?a?|remote[\s,\-]+us|us[\s,\-]+remote"
-    r"|remote[\s,\-]+united states?|remote[\s,\-]+canada"
-    r"|remote[\s,\-]+uk|remote[\s,\-]+australia)[,\.\s\-]*(only|based)?\s*$",
+# Locations that are genuinely open to worldwide applicants (including Egypt)
+LOCATION_OPEN_RE = re.compile(
+    r"^\s*$"
+    r"|^\s*(remote|worldwide|anywhere|global|work from anywhere|international"
+    r"|remote\s*\(verify\s*posting\)|n/?a)\s*$"
+    r"|\bemea\b"            # EMEA includes Egypt
+    r"|\begypt\b"
+    r"|\bmiddle\s+east\b"
+    r"|\bafrica\b"
+    r"|\bremote\s*[-,]?\s*(?:worldwide|global|anywhere|international|emea|africa|middle\s+east)\b",
+    re.IGNORECASE,
+)
+
+# Specific foreign countries that are NOT Egypt — block when found in the location field
+_FOREIGN_COUNTRIES = (
+    r"united states?|u\.?s\.?a?|usa|canada|united kingdom|australia|new zealand|north america"
+    r"|india|singapore|japan|south korea|korea|china|hong kong|taiwan"
+    r"|brazil|mexico|colombia|argentina|chile|peru"
+    r"|germany|france|spain|italy|netherlands|sweden|norway|denmark|finland"
+    r"|ireland|poland|ukraine|czech|romania|hungary|portugal|belgium|austria"
+    r"|switzerland|israel|turkey|saudi arabia|uae|nigeria|kenya|south africa|ghana"
+    r"|philippines|indonesia|malaysia|thailand|vietnam|pakistan|bangladesh"
+    r"|costa rica|nicosia|cyprus"
+)
+_FOREIGN_CITIES = (
+    r"london|berlin|paris|amsterdam|sydney|melbourne|dublin|toronto|vancouver"
+    r"|singapore|tokyo|seoul|jakarta|mumbai|delhi|bangalore|bengaluru|hyderabad"
+    r"|s[aã]o paulo|mexico city|tel aviv|istanbul|warsaw|prague|budapest|bucharest"
+    r"|kyiv|athens|lisbon|madrid|barcelona|milan|rome|z[üu]rich|geneva|brussels"
+    r"|copenhagen|stockholm|oslo|helsinki|nairobi|lagos|cape town|johannesburg"
+    r"|bogot[aá]|santiago|lima|bangkok|kuala lumpur|manila|ho chi minh|taipei"
+    r"|beijing|shanghai|nicosia|san francisco|new york|chicago|austin|seattle"
+    r"|boston|denver|atlanta|miami|dallas|houston|phoenix|portland|minneapolis"
+    r"|washington\s*dc|salt lake city|los angeles"
+)
+
+SPECIFIC_LOCATION_RE = re.compile(
+    rf"\b({_FOREIGN_COUNTRIES})\b"
+    rf"|\b({_FOREIGN_CITIES})\b",
+    re.IGNORECASE,
+)
+
+# US city + state abbreviation (kept for legacy matching)
+_US_STATES = (
+    "AL|AK|AZ|AR|CA|CO|CT|DE|FL|GA|HI|ID|IL|IN|IA|KS|KY|LA|ME|MD|MA|MI|MN"
+    "|MS|MO|MT|NE|NV|NH|NJ|NM|NY|NC|ND|OH|OK|OR|PA|RI|SC|SD|TN|TX|UT|VT"
+    "|VA|WA|WV|WI|WY|DC"
+)
+US_CITY_STATE_RE = re.compile(
+    rf"^[\w\s\-\.]+,\s*({_US_STATES})(\s*,?\s*(?:US|USA|United States?))?\s*$",
+    re.IGNORECASE,
+)
+SINGLE_COUNTRY_RE = US_CITY_STATE_RE  # alias kept so existing call sites don't break
+
+# On-site / in-office / hybrid-with-location jobs
+ONSITE_RE = re.compile(
+    r"\bon[\s\-]?site\b|\bin[\s\-]?office\b|\bin\s+person\b"
+    r"|\boffice[\s\-]based\b|\bnot\s+remote\b|\bno\s+remote\b"
+    r"|\bhybrid\s+\(.*\b(us|usa|uk|canada|australia|new york|san francisco"
+    r"|london|toronto|sydney|chicago|austin|seattle|boston|denver)\b",
+    re.IGNORECASE,
+)
+
+# Matches geo-restriction phrases embedded in body text / page snippets
+BODY_GEO_BLOCKED_RE = re.compile(
+    r"remote\s*[\(\[]\s*(united states?|u\.?s\.?a?|usa|canada|uk|united kingdom|australia|north america)\s*[\)\]]"
+    r"|\b(united states?|usa|u\.?s\.?a?|canada|uk|united kingdom|australia|north america)\s*only\b"
+    r"|\bonly\s+(us|usa|uk|canada|australia)\s+residents?\b"
+    r"|\bmust\s+(be\s+)?(based|located|residing)\s+in\s+the\s+(us|usa|united states?|uk|canada|australia)\b"
+    r"|\bopen\s+to\s+(us|usa|united states?|canada|uk|australia)\s+residents?\s+only\b"
+    # "open to US-based only" / "US-based candidates only" / "US based only"
+    r"|\bopen\s+to\s+(us|usa|united states?|canada|uk|australia)[\s\-]+based\b"
+    r"|\b(us|usa|united states?|canada|uk|australia)[\s\-]+based\s+(only|candidates|applicants|employees|residents)\b"
+    r"|\bremote\s+position[s]?\s+(are\s+)?open\s+to\s+(the\s+)?(us|usa|united states?)\b"
+    # "Remote Canada", "Remote UK", "Remote USA" as standalone location phrases
+    r"|\bremote\s+(canada|uk|united kingdom|australia|north america)\b"
+    r"|\bremote\s+(us|usa|united states?)\b"
+    r"|\bremote\s+within\s+(?:the\s+)?(?:us|usa|united states?|canada|uk)\b"
+    # "REMOTE - US; ..." or "-REMOTE, USA-" location strings
+    r"|\bremote\s*[-,]\s*(?:us|usa|united states?)\b",
+    re.IGNORECASE,
+)
+
+# Soft geo flag: job mentions a preference (not a hard requirement) for US/NA.
+# Does NOT hard-block — instead score is penalised -2 and "GEO_SOFT_BLOCK" tag
+# is appended so Youssef can see and decide for himself.
+SOFT_GEO_PREFERRED_RE = re.compile(
+    r"\bca\s+or\s+nyc\s+preferred\b"
+    r"|\bus\s+preferred\b"
+    r"|\bunited\s+states\s+preferred\b"
+    r"|\bbased\s+in\s+the\s+us\s+preferred\b"
+    r"|\bnorth\s+america\s+preferred\b",
     re.IGNORECASE,
 )
 # Broader location checks for compound restricted strings like "USA, Canada"
@@ -134,8 +235,9 @@ _LOC_RESTRICTED_RE = re.compile(
 
 TITLE_RELEVANT_RE = re.compile(
     r"implementation|configuration|onboarding|integration specialist"
-    r"|customer success|customer support|technical support|technical account"
-    r"|solutions engineer|product specialist|enablement|deployment specialist"
+    r"|customer success|customer support|technical support|support specialist"
+    r"|support agent"
+    r"|product specialist|enablement|deployment specialist"
     r"|business analyst|revenue operations|payroll specialist|crm specialist"
     r"|account manager|client success|client onboarding|saas specialist"
     r"|hrms|hris|erp specialist|support specialist|customer operations",
@@ -143,7 +245,8 @@ TITLE_RELEVANT_RE = re.compile(
 )
 
 TITLE_BLOCKED_RE = re.compile(
-    r"\b(software engineer|frontend|backend|full.?stack|devops|data engineer"
+    r"\b(engineer"
+    r"|software engineer|frontend|backend|full.?stack|devops|data engineer"
     r"|data scientist|ml engineer|machine learning|site reliability|sre"
     r"|android|ios developer|mobile developer|ui.?ux|designer|product designer"
     r"|product manager|engineering manager|staff engineer|principal engineer"
@@ -151,30 +254,87 @@ TITLE_BLOCKED_RE = re.compile(
     r"|copywriter|content writer|content marketing|marketing manager|growth manager"
     r"|recruiter|talent acquisition|hr director|finance director|controller"
     r"|inside sales|sales representative|sales development|account executive"
+    r"|territory account manager|senior account manager|account manager"
+    r"|technical account manager"
+    r"|revenue operations|rev ops|revops"
+    r"|business analyst"
+    r"|support enablement|enablement manager|enablement lead"
+    r"|wfm|rtm|workforce management|workforce manager"
+    r"|product content|content marketing|marketing manager|growth manager"
+    r"|ai engineer|founding.*lead|founding.*engineer"
     r"|engineering lead|product lead|product owner"
     r"|unpaid|volunteer|intern(?:ship)?|php developer|rails engineer"
     r"|ruby developer|devops engineer|blockchain|web3|crypto engineer"
-    r"|wfm|rtm|workforce management)\b",
+    r"|m&a integration|merger.*integration|acquisition.*integration"
+    # Explicitly block engineering-flavoured support titles that slip past the
+    # blanket \bengineer\b — "developer support" / "support developer" are not
+    # caught by that rule; the engineer variants are redundant but kept for clarity
+    r"|support engineer|technical support engineer|support software engineer"
+    r"|developer support|support developer)\b",
     re.IGNORECASE,
+)
+
+# Body-text filter: blocks postings whose description signals an engineering-heavy
+# role despite a support-sounding title.  Applied inside is_blocked() alongside
+# BLOCKED_PATTERNS.  MDM combination uses lookaheads so both terms must co-occur.
+ROLE_TYPE_BLOCKED_RE = re.compile(
+    # Dev languages / frameworks that indicate a coding role
+    r"\bphp\b|\blaravel\b"
+    r"|\bpython\s+scripting\b|\bjava\s+scripting\b"
+    # Mobile-dev IDEs
+    r"|\bandroid\s+studio\b|\bxcode\b"
+    # SIEM / security-tooling heavy roles
+    r"|\bsplunk\b|\barcsight\b"
+    # MDM stack: only block when BOTH "mdm" AND a specific MDM tool appear
+    # (lookaheads match zero-width so re.search succeeds at position 0 when
+    #  both terms exist anywhere in the text)
+    r"|(?=.*\bmdm\b)(?=.*\b(?:intune|airwatch)\b)",
+    re.IGNORECASE | re.DOTALL,
 )
 
 TITLE_GEO_BLOCKED_RE = re.compile(
     r"\(\s*remote[\s,\-]+(us|usa|united states?|canada|north america|uk|united kingdom|australia)\s*\)"
-    r"|\bremote[\s\-]+(us|usa|united states?)\b"
-    r"|\bus[\s\-]+remote\b"                           # "US Remote" reversed order
-    r"|\b(us|usa|united states?|canada)\s*only\b"
+    r"|\bremote[\s,\-]+(us|usa|united states?)\b"
+    r"|\b(us|usa|united states?)[\s,\-]+remote\b"        # "US Remote" order
+    r"|\bus[\s\-]+remote\b"                               # "US Remote" reversed order
+    r"|\bremote\s+from\s+(us|usa|united states?|canada)\b"
+    r"|\b(us|usa|united states?|canada|north america)\s*only\b"
     r"|\(us\)|\(usa\)|\(north america\)"
     r"|\(\s*(united states?|canada|uk|united kingdom|australia|north america)\s*\)"
-    r"|\bamericas?\b"                                 # "Americas" / "America" region
+    r"|\bamericas?\b"                                     # "Americas" / "America" region
+    r"|\blatam\b"
+    r"|\bnorth\s+america\s*\(remote\)"                    # "North America (Remote)"
+    r"|\bcanada[\s,\-]+remote\b|\bremote[\s,\-]+canada\b"
+    r"|\btoronto[\s\-]+based\b"
     r"|\b(st\.?\s*louis|toronto|vancouver|montreal)\b"
     r"|\(\s*\w[\w\s]+,\s*philippines\s*\)"
-    r"|\blatam\b",
+    # specific city+province/country in parens or after comma
+    r"|\(\s*(?:toronto|calgary|vancouver|sydney|london|manila|philippines)\b"
+    r"|,\s*(?:toronto|calgary|vancouver|ab|bc|on)\s*[\),]"
+    # on-site indicators in titles
+    r"|\bon[\s\-]?site\b|\bin[\s\-]?office\b"
+    # city+state in title like "Manager, Austin TX" or "Specialist - New York"
+    r"|,\s*(?:new york|san francisco|los angeles|chicago|austin|seattle|boston|denver"
+    r"|atlanta|miami|dallas|houston|phoenix|washington\s*dc|portland|minneapolis)\b"
+    # title ending with "- United States" or "(United States)"
+    r"|[\-\s]+united states?\s*$"
+    r"|\(\s*united states?\s*\)"
+    # Country names appearing in parentheses in title — "(Remote, South Africa)", "(UK)", etc.
+    r"|\(\s*(?:remote\s*,\s*)?(?:south africa|india|philippines|pakistan|nigeria|kenya"
+    r"|brazil|mexico|indonesia|bangladesh|uk|united kingdom|australia|new zealand"
+    r"|germany|france|spain|netherlands|poland|ukraine|israel|turkey|singapore)\b"
+    # Explicit city/location after dash in title — "Engineer - Dallas, TX"
+    r"|[-–]\s*(?:dallas|houston|austin|chicago|new york|san francisco|los angeles"
+    r"|seattle|boston|denver|atlanta|miami|phoenix|portland|minneapolis)\b"
+    # City in parentheses in title — "(Dallas TX)", "(Chicago, IL)"
+    r"|\(\s*(?:dallas|houston|austin|chicago|new york|san francisco|los angeles"
+    r"|seattle|boston|denver|atlanta|miami|phoenix|portland|minneapolis)\b",
     re.IGNORECASE,
 )
 
 # Aggregator / noise domains – block regardless of path
 AGGREGATOR_DOMAINS = re.compile(
-    r"\b(remoterocketship|dailyremote|kickstartremote|remotely\.jobs|flexjobs"
+    r"\b(leverdemo|remoterocketship|dailyremote|kickstartremote|remotely\.jobs|flexjobs"
     r"|virtualvocations|swooped\.co|workingnomads|talantix|nofluffjobs"
     r"|wearedistributed|euremotejobs|nodesk\.co|jobspresso|remotehub"
     r"|pangian|4dayweek|justremote|workstep|zippia|builtin\.com"
@@ -198,6 +358,235 @@ JOB_URL_RE = re.compile(
     re.IGNORECASE,
 )
 
+
+# ATS domains whose pages reliably embed location in <meta> tags
+_ATS_DOMAINS = (
+    "jobs.lever.co", "boards.greenhouse.io", "job-boards.greenhouse.io",
+    "jobs.ashbyhq.com", "apply.workable.com", "jobs.jobvite.com", "ats.rippling.com",
+)
+
+_META_LOCATION_RE = re.compile(
+    r'<meta\s[^>]*name=["\']twitter:data1["\']\s[^>]*value=["\']([^"\']+)["\']'
+    r'|<meta\s[^>]*value=["\']([^"\']+)["\']\s[^>]*name=["\']twitter:data1["\']',
+    re.IGNORECASE,
+)
+
+# Lever: JSON blob embedded in page  e.g. "location":"Remote (US)"
+_LEVER_LOCATION_RE = re.compile(
+    r'"location"\s*:\s*"([^"]{1,80})"',
+    re.IGNORECASE,
+)
+# Ashby: <span> or <div> labelled "location" class
+_ASHBY_LOCATION_RE = re.compile(
+    r'<(?:span|div|p)[^>]*class=["\'][^"\']*location[^"\']*["\'][^>]*>\s*([^<]{1,80})\s*</',
+    re.IGNORECASE,
+)
+# Workable: og:description often contains "Location: Remote (US)"
+_WORKABLE_LOCATION_RE = re.compile(
+    r'[Ll]ocation[:\s]+([^\n<"]{1,60})',
+)
+
+def _playwright_geo_blocked(url: str, timeout_ms: int = 12000) -> bool:
+    """
+    Render a job page with a headless browser and check visible text for
+    geo-restriction phrases.
+    """
+    try:
+        from playwright.sync_api import sync_playwright, TimeoutError as PWTimeout
+    except ImportError:
+        return False   # Playwright not installed — skip silently
+    try:
+        with sync_playwright() as pw:
+            browser = pw.chromium.launch(headless=True)
+            page    = browser.new_page()
+            page.goto(url, wait_until="networkidle", timeout=timeout_ms)
+            text = page.inner_text("body")
+
+            # Restricted countries/regions — any of these appearing as a standalone
+            # location (in a structured field or as a short phrase) means blocked.
+            _GEO_LOCATION_RE = re.compile(
+                r"\b(united states?|u\.?s\.?a?|usa|canada|uk|united kingdom"
+                r"|australia|north america|pakistan|india|philippines|nigeria"
+                r"|kenya|bangladesh|nepal|sri lanka)\b",
+                re.IGNORECASE,
+            )
+
+            # Check structured location elements across common ATS layouts.
+            _LOCATION_SELECTORS = [
+                ".jv-job-detail-meta",              # Jobvite
+                "[data-qa='location']",             # Ashby
+                "h3[class*='location']",
+                "[class*='location']",
+                "[class*='Location']",
+                "[data-automation='job-location']",
+                "[data-testid*='location']",
+            ]
+            for sel in _LOCATION_SELECTORS:
+                try:
+                    for el in page.query_selector_all(sel):
+                        loc_text = el.inner_text().strip()
+                        if not loc_text:
+                            continue
+                        # Split on semicolons/pipes — ATS sometimes lists multiple
+                        # locations like "Remote Canada; Remote USA"
+                        parts = re.split(r"[;|]", loc_text)
+                        for part in parts:
+                            part = part.strip()
+                            if SINGLE_COUNTRY_RE.match(part) or US_CITY_STATE_RE.match(part):
+                                browser.close()
+                                return True
+                            # Short location field (≤40 chars) that contains a
+                            # blocked country/region name → blocked
+                            if len(part) <= 40 and _GEO_LOCATION_RE.search(part):
+                                browser.close()
+                                return True
+                except Exception:
+                    pass
+
+            # Scan short lines (≤60 chars) in body text as a fallback location check.
+            # ATS pages often render location as a bare line like
+            # "Toronto, Ontario; Remote Canada; Remote USA" outside any labelled element.
+            for line in text.splitlines():
+                line = line.strip()
+                if not line or len(line) > 60:
+                    continue
+                parts = re.split(r"[;|,]", line)
+                for part in parts:
+                    part = part.strip()
+                    if SINGLE_COUNTRY_RE.match(part) or US_CITY_STATE_RE.match(part):
+                        browser.close()
+                        return True
+                    if len(part) <= 40 and _GEO_LOCATION_RE.search(part):
+                        browser.close()
+                        return True
+
+            # US business hours = practical US-only restriction
+            if re.search(r"\bu\.?s\.?\s+(\w+\s+)?business\s+hours\b", text, re.IGNORECASE):
+                browser.close()
+                return True
+
+            browser.close()
+        return bool(BODY_GEO_BLOCKED_RE.search(text))
+    except Exception:
+        return False   # Any error — don't block the job
+
+
+def _playwright_geo_check_batch(jobs: list[dict], workers: int = 3) -> list[dict]:
+    """
+    Filter out geo-blocked jobs from JS-rendered ATS pages.
+    Only processes jobs whose URL matches _JS_ATS_DOMAINS; others pass through.
+    Uses a small thread pool so multiple pages render in parallel.
+    """
+    js_jobs = [j for j in jobs if j.get("needs_pw_check")]
+    if not js_jobs:
+        return jobs
+
+    print(f"  Playwright geo-check: {len(js_jobs)} JS-rendered page(s)…")
+    blocked_urls: set[str] = set()
+    with ThreadPoolExecutor(max_workers=workers) as ex:
+        future_map = {ex.submit(_playwright_geo_blocked, j["url"]): j for j in js_jobs}
+        for future in future_map:
+            j = future_map[future]
+            try:
+                if future.result():
+                    blocked_urls.add(j["url"])
+                    print(f"  [geo-blocked] {j['title'][:70]}")
+            except Exception:
+                pass
+
+    clean = [j for j in jobs if j["url"] not in blocked_urls]
+    for j in clean:
+        j.pop("needs_pw_check", None)
+    return clean
+
+
+def _ats_location(url: str) -> str:
+    """
+    Fetch an ATS job page and return the location value.
+    Tries multiple extraction strategies across different ATS platforms.
+    Also embeds any geo-restriction phrase found in the body so callers can
+    pass the return value straight into BODY_GEO_BLOCKED_RE.
+    """
+    from urllib.parse import urlparse
+    parsed_host = urlparse(url).netloc
+    if not any(parsed_host.endswith(d) for d in _ATS_DOMAINS):
+        return ""
+    try:
+        req = urllib.request.Request(url, headers={
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
+            "Accept": "text/html,application/xhtml+xml",
+        })
+        with urllib.request.urlopen(req, timeout=10) as r:
+            # 64 KB covers <head> meta tags + enough of the job description body
+            page_html = r.read(65536).decode("utf-8", errors="ignore")
+
+        loc = ""
+
+        # Strategy 1: twitter:data1 meta tag (Greenhouse, Jobvite, some Lever)
+        m = _META_LOCATION_RE.search(page_html)
+        if m:
+            loc = (m.group(1) or m.group(2) or "").strip()
+
+        # Strategy 2: Lever JSON blob — "location":"Remote (US)"
+        if not loc and "lever.co" in parsed_host:
+            for m in _LEVER_LOCATION_RE.finditer(page_html):
+                candidate = m.group(1).strip()
+                # Skip obvious non-location JSON values
+                if candidate and not candidate.startswith("http") and len(candidate) < 60:
+                    loc = candidate
+                    break
+
+        # Strategy 3: Ashby location class element
+        if not loc and "ashbyhq.com" in parsed_host:
+            m = _ASHBY_LOCATION_RE.search(page_html)
+            if m:
+                loc = m.group(1).strip()
+
+        # Strategy 4: Workable og:description or plain "Location:" text
+        if not loc and "workable.com" in parsed_host:
+            m = _WORKABLE_LOCATION_RE.search(page_html)
+            if m:
+                loc = m.group(1).strip().rstrip(",;. ")
+
+        # Strategy 5: Look for common ATS location patterns in page title
+        if not loc:
+            title_m = re.search(r'<title[^>]*>([^<]{1,200})</title>', page_html, re.IGNORECASE)
+            if title_m:
+                title_text = title_m.group(1)
+                # e.g. "Job Title - Remote (US)" or "Job Title | Remote, United States"
+                loc_in_title = re.search(
+                    r'[-|]\s*(remote[^<"]{0,40})',
+                    title_text, re.IGNORECASE,
+                )
+                if loc_in_title:
+                    loc = loc_in_title.group(1).strip()
+
+        # Strip HTML tags for a plain-text excerpt to check geo patterns
+        plain = re.sub(r"<[^>]+>", " ", page_html)
+
+        # Return location + first geo-restriction sentence found, so the caller
+        # can run both SINGLE_COUNTRY_RE and BODY_GEO_BLOCKED_RE on the result.
+        if BODY_GEO_BLOCKED_RE.search(plain):
+            geo_match = BODY_GEO_BLOCKED_RE.search(plain)
+            return f"{loc} {geo_match.group()}".strip()
+        return loc
+    except Exception:
+        pass
+    return ""
+
+
+# ── Scoring helpers ───────────────────────────────────────────────────────────
+# Detects part-time / contractor / fractional signals for the SIDE_ROLE boost
+_SIDE_ROLE_RE = re.compile(
+    r"\bpart[\s\-]time\b|\bcontractor\b|\bcontract\s+role\b|\bfractional\b",
+    re.IGNORECASE,
+)
+
+# Detects EMEA timezone alignment — natural fit for Egypt (UTC+2/+3)
+_EMEA_RE = re.compile(
+    r"\bemea\b|\butc\+[23]\b",
+    re.IGNORECASE,
+)
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
 def fetch_json(url: str, headers: dict | None = None):
@@ -233,17 +622,53 @@ def score_job(title: str, description: str) -> int:
     text = f"{title} {description}".lower()
     score = sum(1 for kw in SKILL_KEYWORDS if kw in text)
     score += sum(3 for kw in HIGH_VALUE_KEYWORDS if kw in text)
+    # +2 for part-time / contractor / fractional — side-role opportunities
+    if _SIDE_ROLE_RE.search(text):
+        score += 2
+    # +1 for EMEA / UTC+2/+3 mentions — strong timezone alignment for Egypt
+    if _EMEA_RE.search(text):
+        score += 1
     return score
 
 
 def is_blocked(location: str, description: str, title: str = "") -> bool:
     loc = location.strip()
-    if SINGLE_COUNTRY_RE.match(loc):
+
+    # If the location is clearly open/worldwide, only check title/body signals
+    if LOCATION_OPEN_RE.match(loc):
+        if title and TITLE_GEO_BLOCKED_RE.search(title):
+            return True
+        combined = f"{location} {title} {description}".lower()
+        if ONSITE_RE.search(combined):
+            return True
+        if any(rx.search(combined) for rx in BLOCKED_PATTERNS):
+            return True
+        if BODY_GEO_BLOCKED_RE.search(f"{location} {description}"):
+            return True
+        if ROLE_TYPE_BLOCKED_RE.search(combined):
+            return True
+        return False
+
+    # Location names a specific country or city — block unless it's Egypt/EMEA
+    if SPECIFIC_LOCATION_RE.search(loc):
         return True
-    if loc and not _LOC_WORLDWIDE_RE.search(loc) and _LOC_RESTRICTED_RE.search(loc):
-        return True  # compound restricted locations like "USA, Canada" or "North America"
-    combined = f"{loc} {title} {description}".lower()
-    return any(rx.search(combined) for rx in BLOCKED_PATTERNS)
+    # US city+state abbreviation
+    if US_CITY_STATE_RE.match(loc):
+        return True
+
+    # Fallback: check title and body signals for any remaining cases
+    if title and TITLE_GEO_BLOCKED_RE.search(title):
+        return True
+    combined = f"{location} {title} {description}".lower()
+    if ONSITE_RE.search(combined):
+        return True
+    if any(rx.search(combined) for rx in BLOCKED_PATTERNS):
+        return True
+    if BODY_GEO_BLOCKED_RE.search(f"{location} {description}"):
+        return True
+    if ROLE_TYPE_BLOCKED_RE.search(combined):
+        return True
+    return False
 
 
 def is_title_relevant(title: str) -> bool:
@@ -253,6 +678,8 @@ def is_title_relevant(title: str) -> bool:
 
 
 def is_valid_job_url(url: str, require_job_path: bool = False) -> bool:
+    if not url.startswith(("http://", "https://")):
+        return False
     if AGGREGATOR_DOMAINS.search(url):
         return False
     if JUNK_URL_RE.search(url):
@@ -375,13 +802,22 @@ def fetch_remotive(term: str) -> list[dict]:
         title = j.get("title", "")
         if TITLE_GEO_BLOCKED_RE.search(title) or is_blocked(loc, desc, title):
             continue
-        out.append(make_job(
+        sc        = score_job(title, desc)
+        base_tags = ", ".join(j.get("tags", [])[:6])
+        # Append SIDE_ROLE tag when part-time / contractor signals are present
+        extra = ["SIDE_ROLE"] if _SIDE_ROLE_RE.search(f"{title} {desc}") else []
+        tags  = ", ".join(filter(None, [base_tags] + extra))
+        job   = make_job(
             "Remotive", title, j.get("company_name", ""), loc,
             j.get("url", ""),
             normalize_date(j.get("publication_date", "")),
-            score_job(title, desc),
-            ", ".join(j.get("tags", [])[:6]),
-        ))
+            sc, tags,
+        )
+        # Soft geo preference: penalise -2 and tag rather than hard-block
+        if SOFT_GEO_PREFERRED_RE.search(f"{loc} {desc}"):
+            job["score"] = max(0, job["score"] - 2)
+            job["tags"]  = ", ".join(filter(None, [job["tags"], "GEO_SOFT_BLOCK"]))
+        out.append(job)
     return out
 
 
@@ -513,12 +949,28 @@ def fetch_cse_query(query: str, api_key=None, cx=None, serpapi_key=None) -> list
             continue
         if is_blocked("", body, title):
             continue
+        if BODY_GEO_BLOCKED_RE.search(body):
+            continue
+        ats_loc = _ats_location(url)
+        if ats_loc and (SINGLE_COUNTRY_RE.match(ats_loc) or BODY_GEO_BLOCKED_RE.search(ats_loc)):
+            continue
         sc = score_job(title, body)
         if sc < 1:
             continue
         company = _company_from_url(url)
-        out.append(make_job(source_tag, title, company, "Remote (verify posting)",
-                            url, datetime.now().strftime("%Y-%m-%d"), sc))
+        # Append SIDE_ROLE tag when part-time / contractor signals are present
+        tags = ["SIDE_ROLE"] if _SIDE_ROLE_RE.search(f"{title} {body}") else []
+        job  = make_job(source_tag, title, company, "Remote (verify posting)",
+                        url, datetime.now().strftime("%Y-%m-%d"), sc,
+                        ", ".join(tags))
+        # Soft geo preference: penalise -2 and tag rather than hard-block
+        if SOFT_GEO_PREFERRED_RE.search(f"{title} {body}"):
+            job["score"] = max(0, job["score"] - 2)
+            job["tags"]  = ", ".join(filter(None, [job["tags"], "GEO_SOFT_BLOCK"]))
+        # Flag for Playwright check — we only have a short search snippet for
+        # these URLs, so geo restrictions in the full page body haven't been read.
+        job["needs_pw_check"] = True
+        out.append(job)
     return out
 
 
@@ -548,11 +1000,7 @@ def get_sheet():
         return None
     try:
         import gspread
-        from google.oauth2.service_account import Credentials
-        scopes = ["https://www.googleapis.com/auth/spreadsheets",
-                  "https://www.googleapis.com/auth/drive"]
-        creds  = Credentials.from_service_account_file(str(GSHEET_CREDS), scopes=scopes)
-        client = gspread.authorize(creds)
+        client = gspread.service_account(filename=str(GSHEET_CREDS))
         try:
             sh = client.open(GSHEET_NAME)
         except gspread.SpreadsheetNotFound:
@@ -667,6 +1115,9 @@ def main():
     # ── Validate URLs (drop expired postings) ─────────────────────────────
     print(f"\n--- Link Validation ---")
     live_jobs = validate_links(list(new_jobs.values()))
+
+    # ── Playwright geo-check (JS-rendered ATS pages) ───────────────────────
+    live_jobs = _playwright_geo_check_batch(live_jobs)
 
     # Update seen set to include both live and dead (so dead links don't resurface)
     seen.update(new_jobs.keys())
