@@ -3,12 +3,15 @@
 google_credentials.json
 google_cse.json
 serpapi.json
+anthropic_key.json
 
 # Runtime state & output
 seen_jobs.json
 job_results_log.txt
 job_results_*.txt
 scheduler_run.log
+status.json
+jobhunter.log*
 
 # Python
 __pycache__/

@@ -1,30 +1,44 @@
-# Setup daily Task Scheduler job for job_search.py
-# Run this script once as Administrator
+# JobHunter scheduler setup. Run once as Administrator.
+# Unregisters all legacy tasks and registers one canonical "JobHunter" task.
 
-$pythonPath = (Get-Command python).Source
-$scriptPath = "D:\Joe\JobHunter\job_search.py"
-$taskName   = "YousefJobSearch"
-$logPath    = "D:\Joe\JobHunter\scheduler_run.log"
+$oldTasks = @(
+    "JobHunter Daily Search",
+    "JobHunter-DailySearch",
+    "YousefJobSearch",
+    "YousefJobSearch_PM"
+)
+foreach ($name in $oldTasks) {
+    try {
+        Unregister-ScheduledTask -TaskName $name -Confirm:$false -ErrorAction Stop
+        Write-Host "Removed old task: $name"
+    } catch {
+        Write-Host "Not found (ok): $name"
+    }
+}
 
-$action  = New-ScheduledTaskAction `
-    -Execute $pythonPath `
-    -Argument "-X utf8 `"$scriptPath`" >> `"$logPath`" 2>&1"
+$taskName = "JobHunter"
+$batPath  = "D:\Joe\JobHunter\run_job_search.bat"
 
-$trigger1 = New-ScheduledTaskTrigger -Daily -At "18:00"
+# No shell redirection in the action: Task Scheduler does not interpret >>,
+# so redirection args would be passed to the program and break it.
+# Python writes its own logs.
+$action = New-ScheduledTaskAction -Execute $batPath -WorkingDirectory "D:\Joe\JobHunter"
+
+$trigger = New-ScheduledTaskTrigger -Daily -At "18:00"
 
 $settings = New-ScheduledTaskSettingsSet `
     -StartWhenAvailable `
     -RunOnlyIfNetworkAvailable `
-    -ExecutionTimeLimit (New-TimeSpan -Minutes 10)
+    -ExecutionTimeLimit (New-TimeSpan -Minutes 20)
 
 Register-ScheduledTask `
-    -TaskName  $taskName `
-    -Action    $action `
-    -Trigger   $trigger1 `
-    -Settings  $settings `
-    -RunLevel  Highest `
+    -TaskName $taskName `
+    -Action   $action `
+    -Trigger  $trigger `
+    -Settings $settings `
     -Force
 
-Write-Host "Task '$taskName' registered. Runs at 18:00 daily."
-Write-Host "To run it immediately: Start-ScheduledTask -TaskName '$taskName'"
-Write-Host "To remove it:          Unregister-ScheduledTask -TaskName '$taskName' -Confirm:`$false"
+Write-Host ""
+Write-Host "Task '$taskName' registered. Runs daily at 18:00."
+Write-Host "Run now :  Start-ScheduledTask -TaskName '$taskName'"
+Write-Host "Check   :  Get-Content D:\Joe\JobHunter\status.json"

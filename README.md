@@ -1,99 +1,101 @@
 # Remote Job Hunter
 
-Automated daily remote job search tailored for implementation, customer success, and SaaS onboarding roles — filtered for worldwide/Egypt-eligible positions and ranked by relevance score.
+Automated daily remote-job search for implementation, customer success, and SaaS
+onboarding roles — judged for relevance and Egypt-eligibility by **Claude Haiku**
+instead of regex rules.
 
 ---
 
 ## What it does
 
-Each run, `job_search.py`:
+Each run, `run.py`:
 
-1. **Searches three sources** for new remote job postings:
-   - **Remotive API** — queried with 14 targeted role terms
-   - **SerpAPI / Google CSE / DuckDuckGo** — searches career pages and ATS platforms (Greenhouse, Lever, Ashby, Workable, etc.) using 8 structured queries
-2. **Filters** out geo-restricted postings (US/UK/Canada/EU only), language requirements (non-Arabic/English), and irrelevant titles (engineering, design, sales, etc.)
-3. **Scores** each posting based on matching skill keywords and high-value role terms (max score wins)
-4. **Deduplicates** against `seen_jobs.json` — URLs already seen on previous runs are skipped permanently
-5. **Validates** all new URLs with a HEAD request — expired or removed postings are dropped before output
-6. **Outputs** results to:
-   - A Google Sheet (`Remote Job Leads – Youssef`) if credentials are configured
-   - A local cumulative log (`job_results_log.txt`)
+1. **Gathers candidates** from:
+   - **Remotive API** — 18 targeted role terms (full descriptions included)
+   - **SerpAPI / Google CSE / DuckDuckGo** — career/ATS pages (Greenhouse, Lever,
+     Ashby, Workable, Deel, Personio, etc.)
+2. **Deduplicates** against `seen_jobs.json` — URLs seen in previous runs are skipped
+3. **Prefilters** cheaply (junk URLs, obviously-wrong titles, keyword ranking) and
+   caps the list at `max_llm_calls` (default 20) to bound API cost
+4. **Fetches the full posting page** (HTTP + BeautifulSoup, Playwright fallback for
+   JS-heavy ATS pages). Dead/expired/redirected postings are dropped here
+5. **Judges each posting with Claude Haiku** (`claude-haiku-4-5-20251001`): role fit
+   (0–10) against the profile in `config.json`, geo eligibility for an Egypt-based
+   candidate, language requirement (English/Arabic only), real company name, stated
+   location, and a one-line summary. A job is accepted only if
+   `fit ≥ 6 AND geo eligible AND language ok AND role type ok`
+   (geo "unclear" is accepted but tagged `GEO?`)
+6. **Outputs**:
+   - Google Sheet `Remote Job Leads – Youssef` (col J = summary + reason;
+     a `Meta` tab cell shows the last-run heartbeat)
+   - `job_results_log.txt` (human-readable, capped at 2 MB)
+   - `status.json` (last run / last success / counts / error)
 
----
+Typical cost: ~$0.003 per judged job — a normal 1–3-job day costs well under a cent.
 
-## Scheduling
-
-The script runs **daily at 18:00** via Windows Task Scheduler.
-
-### First-time setup
-
-Run `setup_scheduler.ps1` **once as Administrator** in PowerShell:
-
-```powershell
-Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass -Force
-& "D:\Joe\JobHunter\setup_scheduler.ps1"
 ```
-
-This registers the `YousefJobSearch` task. To verify it was created:
-
-```powershell
-Get-ScheduledTask -TaskName "YousefJobSearch"
+Usage:  python run.py [--dry-run] [--max-llm N]
 ```
-
-To trigger an immediate run without waiting for 18:00:
-
-```powershell
-Start-ScheduledTask -TaskName "YousefJobSearch"
-```
-
-To remove the task:
-
-```powershell
-Unregister-ScheduledTask -TaskName "YousefJobSearch" -Confirm:$false
-```
-
-Logs from each scheduled run are written to `scheduler_run.log`.
-
----
-
-## Search engine priority
-
-The script picks the first available engine in this order:
-
-| Priority | Engine | Config file | Notes |
-|----------|--------|-------------|-------|
-| 1 | SerpAPI | `serpapi.json` | 250 free searches/month |
-| 2 | Google CSE | `google_cse.json` | Custom 42-domain engine |
-| 3 | DuckDuckGo | *(none needed)* | Free fallback, slower |
 
 ---
 
 ## Setup
 
-### Requirements
-
 ```
-pip install gspread google-auth duckduckgo-search
+pip install -r requirements.txt
+playwright install chromium   # once, for the JS-page fallback
 ```
 
-### Google Sheets (optional)
-
-Follow `SHEETS_SETUP.md` to create a service account and place `google_credentials.json` in the project folder.
-
-### SerpAPI (optional)
-
-Follow `GOOGLE_CSE_SETUP.md` or create `serpapi.json`:
+**Anthropic API key** (required): set `ANTHROPIC_API_KEY`, or create
+`anthropic_key.json`:
 
 ```json
-{ "api_key": "your_serpapi_key" }
+{ "api_key": "sk-ant-..." }
 ```
 
-### Google CSE (optional)
+**Google Sheets** (optional): see `SHEETS_SETUP.md` → `google_credentials.json`.
 
-Create `google_cse.json`:
+**Search engine** (optional, first available wins):
 
-```json
-{ "api_key": "your_google_api_key", "cx": "your_cse_cx_id" }
+| Priority | Engine | Config file |
+|----------|--------|-------------|
+| 1 | SerpAPI | `serpapi.json` — `{ "api_key": "..." }` |
+| 2 | Google CSE | `google_cse.json` — `{ "api_key": "...", "cx": "..." }` |
+| 3 | DuckDuckGo | *(none needed — free fallback)* |
+
+**Profile & search terms** live in `config.json` — edit the `profile` string to
+change what the judge considers a fit.
+
+---
+
+## Scheduling
+
+One Windows scheduled task, `JobHunter`, runs daily at 18:00 via
+`run_job_search.bat` (no shell redirection — Python owns its own logging).
+
+```powershell
+# First-time setup (as Administrator):
+& "D:\Joe\JobHunter\setup_scheduler.ps1"
+
+# Run immediately:
+Start-ScheduledTask -TaskName "JobHunter"
+
+# Health check — last run/success timestamps:
+Get-Content D:\Joe\JobHunter\status.json
+```
+
+If no successful run happens for 3+ days, the next run writes an ALERT into the
+sheet's `Meta` tab and attempts a Windows toast.
+
+---
+
+## Tools
+
+```
+python tools/replay.py --fetch-only          # zero-cost fetch/dead-link test
+python tools/replay.py --sample 12           # re-judge recent log entries (~$0.05)
+python tools/cleanup_sheet.py                # re-judge sheet rows, mark Status col
+python tools/cleanup_sheet.py --delete       # delete DEAD/REJECT rows
 ```
 
 ---
@@ -102,16 +104,31 @@ Create `google_cse.json`:
 
 ```
 JobHunter/
-├── job_search.py          # Main script
-├── setup_scheduler.ps1    # Registers the Windows scheduled task
-├── SHEETS_SETUP.md        # Guide: Google Sheets service account setup
-├── GOOGLE_CSE_SETUP.md    # Guide: SerpAPI / Google CSE setup
-├── README.md
+├── run.py                   # Entry point / pipeline orchestrator
+├── config.json              # Profile, search terms, thresholds, caps
+├── requirements.txt
+├── run_job_search.bat       # Scheduled-task entry point
+├── setup_scheduler.ps1      # Registers the JobHunter task (removes legacy tasks)
+├── jobhunter/
+│   ├── config.py            # Paths + config/credential loading
+│   ├── models.py            # Job / FetchResult dataclasses
+│   ├── sources.py           # Remotive + SerpAPI→CSE→DDG search chain
+│   ├── prefilter.py         # Cheap first pass: URL sanity, title blocklist, ranking
+│   ├── fetch.py             # Full-page fetcher + dead-link detection
+│   ├── judge.py             # Claude Haiku structured relevance judge
+│   ├── store.py             # seen_jobs.json dedup
+│   ├── sheet.py             # Google Sheets output + heartbeat
+│   ├── runlog.py            # Rotating logs
+│   └── notify.py            # status.json + stale-run alert
+├── tools/
+│   ├── replay.py            # Re-judge past results from the log
+│   └── cleanup_sheet.py     # Re-judge existing sheet rows
 │
 │   # Not tracked in git:
+├── anthropic_key.json
 ├── google_credentials.json
 ├── serpapi.json
-├── google_cse.json
 ├── seen_jobs.json
+├── status.json
 └── job_results_log.txt
 ```

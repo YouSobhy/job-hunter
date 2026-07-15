@@ -1,0 +1,7 @@
+anthropic
+pydantic
+gspread
+google-auth
+ddgs
+playwright
+beautifulsoup4
