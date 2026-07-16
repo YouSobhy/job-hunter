@@ -25,12 +25,13 @@ log = runlog.setup_logging()
 
 TASK_NAME = "JobHunter"
 RUN_TIMEOUT_S = 25 * 60
+_NO_WINDOW = getattr(subprocess, "CREATE_NO_WINDOW", 0)
 
 
 def _ps(cmd: str) -> str:
     out = subprocess.run(
         ["powershell", "-NoProfile", "-Command", cmd],
-        capture_output=True, text=True, timeout=20,
+        capture_output=True, text=True, timeout=20, creationflags=_NO_WINDOW,
     )
     return out.stdout.strip()
 
@@ -47,7 +48,7 @@ def start_task() -> bool:
         subprocess.run(
             ["powershell", "-NoProfile", "-Command",
              f"Start-ScheduledTask -TaskName {TASK_NAME}"],
-            capture_output=True, timeout=20,
+            capture_output=True, timeout=20, creationflags=_NO_WINDOW,
         )
         return True
     except Exception:

@@ -65,6 +65,7 @@ def toast(message: str) -> None:
         subprocess.run(
             ["powershell", "-NoProfile", "-Command", ps],
             capture_output=True, timeout=15,
+            creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
         )
     except Exception:
         pass

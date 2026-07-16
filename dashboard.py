@@ -18,6 +18,7 @@ from jobhunter.results import load_jobs
 st.set_page_config(page_title="JobHunter", page_icon="🎯", layout="wide")
 
 TASK_NAME = "JobHunter"
+_NO_WINDOW = getattr(subprocess, "CREATE_NO_WINDOW", 0)
 
 
 def task_state() -> str:
@@ -25,7 +26,7 @@ def task_state() -> str:
         out = subprocess.run(
             ["powershell", "-NoProfile", "-Command",
              f"(Get-ScheduledTask -TaskName {TASK_NAME}).State"],
-            capture_output=True, text=True, timeout=15,
+            capture_output=True, text=True, timeout=15, creationflags=_NO_WINDOW,
         )
         return out.stdout.strip() or "Unknown"
     except Exception:
@@ -37,7 +38,7 @@ def fire_run() -> bool:
         out = subprocess.run(
             ["powershell", "-NoProfile", "-Command",
              f"Start-ScheduledTask -TaskName {TASK_NAME}"],
-            capture_output=True, text=True, timeout=15,
+            capture_output=True, text=True, timeout=15, creationflags=_NO_WINDOW,
         )
         return out.returncode == 0
     except Exception:
