@@ -1,4 +1,5 @@
 anthropic
+google-genai
 pydantic
 gspread
 google-auth

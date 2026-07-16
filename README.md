@@ -19,10 +19,12 @@ Each run, `run.py`:
    caps the list at `max_llm_calls` (default 20) to bound API cost
 4. **Fetches the full posting page** (HTTP + BeautifulSoup, Playwright fallback for
    JS-heavy ATS pages). Dead/expired/redirected postings are dropped here
-5. **Judges each posting with Claude Haiku** (`claude-haiku-4-5-20251001`): role fit
-   (0–10) against the profile in `config.json`, geo eligibility for an Egypt-based
-   candidate, language requirement (English/Arabic only), real company name, stated
-   location, and a one-line summary. A job is accepted only if
+5. **Judges each posting with an LLM** — Gemini (`gemini-2.5-flash`, free tier) or
+   Claude Haiku (`claude-haiku-4-5-20251001`), auto-picked by whichever API key is
+   configured (Gemini wins if both). The verdict covers: role fit (0–10) against the
+   profile in `config.json`, geo eligibility for an Egypt-based candidate, language
+   requirement (English/Arabic only), real company name, stated location, and a
+   one-line summary. A job is accepted only if
    `fit ≥ 6 AND geo eligible AND language ok AND role type ok`
    (geo "unclear" is accepted but tagged `GEO?`)
 6. **Outputs**:
@@ -31,7 +33,8 @@ Each run, `run.py`:
    - `job_results_log.txt` (human-readable, capped at 2 MB)
    - `status.json` (last run / last success / counts / error)
 
-Typical cost: ~$0.003 per judged job — a normal 1–3-job day costs well under a cent.
+Typical cost: free on Gemini's free tier (the 20-call/run cap fits well inside its
+daily quota); ~$0.003 per judged job on Claude Haiku.
 
 ```
 Usage:  python run.py [--dry-run] [--max-llm N]
@@ -46,12 +49,12 @@ pip install -r requirements.txt
 playwright install chromium   # once, for the JS-page fallback
 ```
 
-**Anthropic API key** (required): set `ANTHROPIC_API_KEY`, or create
-`anthropic_key.json`:
+**LLM API key** (one required — Gemini preferred, it's free):
 
-```json
-{ "api_key": "sk-ant-..." }
-```
+- Gemini: get a key at https://aistudio.google.com/apikey, then set
+  `GEMINI_API_KEY` or create `gemini_key.json`: `{ "api_key": "AIza..." }`
+- Claude: set `ANTHROPIC_API_KEY` or create `anthropic_key.json`:
+  `{ "api_key": "sk-ant-..." }` (needs prepaid API credits)
 
 **Google Sheets** (optional): see `SHEETS_SETUP.md` → `google_credentials.json`.
 
@@ -115,7 +118,7 @@ JobHunter/
 │   ├── sources.py           # Remotive + SerpAPI→CSE→DDG search chain
 │   ├── prefilter.py         # Cheap first pass: URL sanity, title blocklist, ranking
 │   ├── fetch.py             # Full-page fetcher + dead-link detection
-│   ├── judge.py             # Claude Haiku structured relevance judge
+│   ├── judge.py             # LLM structured relevance judge (Gemini or Claude)
 │   ├── store.py             # seen_jobs.json dedup
 │   ├── sheet.py             # Google Sheets output + heartbeat
 │   ├── runlog.py            # Rotating logs
@@ -125,6 +128,7 @@ JobHunter/
 │   └── cleanup_sheet.py     # Re-judge existing sheet rows
 │
 │   # Not tracked in git:
+├── gemini_key.json
 ├── anthropic_key.json
 ├── google_credentials.json
 ├── serpapi.json

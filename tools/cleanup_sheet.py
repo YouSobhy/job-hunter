@@ -16,7 +16,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from jobhunter.config import load_config
 from jobhunter.fetch import fetch_posting
-from jobhunter.judge import judge_job, make_client
+from jobhunter.judge import Judge
 from jobhunter.models import Job
 from jobhunter.sheet import get_spreadsheet, get_worksheet
 
@@ -44,7 +44,7 @@ def main() -> None:
     if args.limit:
         data = data[: args.limit]
 
-    client = make_client()
+    judge = Judge(cfg)
     verdicts: dict[int, str] = {}   # row index (1-based sheet row) -> status text
     to_delete: list[int] = []
 
@@ -68,7 +68,7 @@ def main() -> None:
             print("         -> fetch error (kept)")
             continue
         try:
-            v = judge_job(client, Job(source="Cleanup", title=title, url=url), r.text, cfg)
+            v = judge.judge_job(Job(source="Cleanup", title=title, url=url), r.text)
         except Exception as e:
             verdicts[i] = "CHECK: judge failed"
             print(f"         -> judge error: {str(e)[:80]}")

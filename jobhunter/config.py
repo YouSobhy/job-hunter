@@ -16,17 +16,19 @@ GSHEET_CREDS = BASE_DIR / "google_credentials.json"
 GOOGLE_CSE_FILE = BASE_DIR / "google_cse.json"
 SERPAPI_FILE = BASE_DIR / "serpapi.json"
 ANTHROPIC_KEY_FILE = BASE_DIR / "anthropic_key.json"
+GEMINI_KEY_FILE = BASE_DIR / "gemini_key.json"
 
 
 @dataclass
 class Config:
     sheet_name: str
     model: str
-    max_llm_calls: int
-    fit_threshold: int
-    truncate_head_chars: int
-    truncate_tail_chars: int
     profile: str
+    gemini_model: str = "gemini-2.5-flash"
+    max_llm_calls: int = 20
+    fit_threshold: int = 6
+    truncate_head_chars: int = 7000
+    truncate_tail_chars: int = 1000
     remotive_terms: list[str] = field(default_factory=list)
     search_queries: list[str] = field(default_factory=list)
 
@@ -55,3 +57,11 @@ def load_cse_creds() -> tuple[str | None, str | None]:
 
 def load_anthropic_key() -> str | None:
     return os.environ.get("ANTHROPIC_API_KEY") or _json_key(ANTHROPIC_KEY_FILE, "api_key")
+
+
+def load_gemini_key() -> str | None:
+    return (
+        os.environ.get("GEMINI_API_KEY")
+        or os.environ.get("GOOGLE_API_KEY")
+        or _json_key(GEMINI_KEY_FILE, "api_key")
+    )

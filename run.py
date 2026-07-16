@@ -15,7 +15,7 @@ from datetime import datetime
 from jobhunter import notify, runlog, sheet
 from jobhunter.config import load_config
 from jobhunter.fetch import fetch_batch
-from jobhunter.judge import JudgeUnavailable, judge_batch, make_client
+from jobhunter.judge import Judge, JudgeUnavailable
 from jobhunter.models import FetchResult
 from jobhunter.prefilter import prefilter
 from jobhunter.sources import gather_all
@@ -44,7 +44,8 @@ def main(dry_run: bool = False, max_llm: int | None = None) -> None:
         notify.toast(alert)
 
     # Fail fast on a missing API key before spending time on sources
-    client = make_client()
+    judge = Judge(cfg)
+    print(f"  Judge : {judge.provider} ({judge.model})")
 
     # -- Gather + dedup --------------------------------------------------
     raw = gather_all(cfg)
@@ -100,8 +101,8 @@ def main(dry_run: bool = False, max_llm: int | None = None) -> None:
         print(f"  {len(dead_urls)} dead link(s) dropped")
 
     # -- Judge -------------------------------------------------------------
-    print(f"\n--- Claude judge ({cfg.model}) ---")
-    verdicts = judge_batch(client, to_judge, cfg)
+    print(f"\n--- LLM judge ({judge.provider}: {judge.model}) ---")
+    verdicts = judge.judge_batch(to_judge)
 
     accepted = []
     for j, _text in to_judge:

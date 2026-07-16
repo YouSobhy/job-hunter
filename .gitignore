@@ -4,6 +4,7 @@ google_credentials.json
 google_cse.json
 serpapi.json
 anthropic_key.json
+gemini_key.json
 
 # Runtime state & output
 seen_jobs.json

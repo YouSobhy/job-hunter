@@ -15,7 +15,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from jobhunter.config import RESULTS_LOG, load_config
 from jobhunter.fetch import fetch_posting
-from jobhunter.judge import judge_batch, make_client
+from jobhunter.judge import Judge
 from jobhunter.models import Job
 
 JOB_RE = re.compile(r"^\[(\d+)\]\s+(.+)$")
@@ -85,9 +85,9 @@ def main() -> None:
         print("\nNothing fetched ok — nothing to judge.")
         return
 
-    print(f"\n--- Judging {len(items)} posting(s) with {cfg.model} ---")
-    client = make_client()
-    verdicts = judge_batch(client, items, cfg)
+    judge = Judge(cfg)
+    print(f"\n--- Judging {len(items)} posting(s) with {judge.provider}: {judge.model} ---")
+    verdicts = judge.judge_batch(items)
 
     print(f"\n{'fit':>3} | {'geo':<10} | {'lang':<5} | {'role':<5} | company / location / reason")
     print("-" * 100)

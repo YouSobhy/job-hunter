@@ -1,16 +1,21 @@
-"""Claude Haiku relevance judge.
+"""LLM relevance judge — Gemini or Claude backend, auto-detected by key.
 
 Reads each job's fetched posting text and returns a structured Verdict:
 role fit for Youssef's profile, geo eligibility for an Egypt-based
 candidate, language check, real company name, and a one-line summary.
+
+Provider selection: Gemini key (GEMINI_API_KEY / GOOGLE_API_KEY /
+gemini_key.json) wins if present — its free tier covers this workload.
+Otherwise the Anthropic key (ANTHROPIC_API_KEY / anthropic_key.json).
 """
 
 import logging
+import time
 from typing import Literal
 
 from pydantic import BaseModel
 
-from .config import Config, load_anthropic_key
+from .config import Config, load_anthropic_key, load_gemini_key
 from .models import Job
 
 log = logging.getLogger("jobhunter")
@@ -28,19 +33,7 @@ class Verdict(BaseModel):
 
 
 class JudgeUnavailable(Exception):
-    """Total API failure (auth/network) — abort judging, retry next run."""
-
-
-def make_client():
-    import anthropic
-
-    key = load_anthropic_key()
-    if not key:
-        raise JudgeUnavailable(
-            "No Anthropic API key. Set ANTHROPIC_API_KEY or create anthropic_key.json "
-            'with {"api_key": "sk-ant-..."}'
-        )
-    return anthropic.Anthropic(api_key=key)
+    """Total API failure (no key / auth / network) — abort judging, retry next run."""
 
 
 def build_system_prompt(cfg: Config) -> str:
@@ -87,39 +80,116 @@ def _truncate(text: str, cfg: Config) -> str:
     return text[:head] + "\n[...truncated...]\n" + text[-tail:]
 
 
-def judge_job(client, job: Job, page_text: str, cfg: Config) -> Verdict:
-    user_msg = (
+def _user_msg(job: Job, page_text: str, cfg: Config) -> str:
+    return (
         f"Title: {job.title}\n"
         f"Source: {job.source}\n"
         f"URL: {job.url}\n"
         f"Source-reported location: {job.location or 'Not provided'}\n\n"
         f"Posting text:\n{_truncate(page_text, cfg)}"
     )
-    response = client.messages.parse(
-        model=cfg.model,
-        max_tokens=1024,
-        system=build_system_prompt(cfg),
-        messages=[{"role": "user", "content": user_msg}],
-        output_format=Verdict,
-    )
-    return response.parsed_output
 
 
-def judge_batch(client, items: list[tuple[Job, str]], cfg: Config) -> dict[str, Verdict]:
-    """Judge each (job, page_text). Returns {url: Verdict}; jobs whose call
-    failed are simply absent (skipped, retried next run)."""
-    import anthropic
+class Judge:
+    def __init__(self, cfg: Config):
+        self.cfg = cfg
+        self._system = build_system_prompt(cfg)
+        gemini_key = load_gemini_key()
+        anthropic_key = load_anthropic_key()
+        if gemini_key:
+            from google import genai
 
-    verdicts: dict[str, Verdict] = {}
-    for i, (job, text) in enumerate(items, 1):
-        print(f"  [judge {i}/{len(items)}] {job.title[:60]}")
-        try:
-            verdicts[job.url] = judge_job(client, job, text, cfg)
-        except (anthropic.AuthenticationError, anthropic.PermissionDeniedError) as e:
-            raise JudgeUnavailable(f"Anthropic auth failed: {e}") from e
-        except anthropic.APIConnectionError as e:
-            raise JudgeUnavailable(f"Cannot reach Anthropic API: {e}") from e
-        except Exception as e:
-            # Per-job failure: skip, don't mark seen — retried next run
-            log.warning("judge failed for %s: %s", job.url[:60], str(e)[:200])
-    return verdicts
+            self.provider = "gemini"
+            self.model = cfg.gemini_model
+            self._client = genai.Client(api_key=gemini_key)
+        elif anthropic_key:
+            import anthropic
+
+            self.provider = "anthropic"
+            self.model = cfg.model
+            self._client = anthropic.Anthropic(api_key=anthropic_key)
+        else:
+            raise JudgeUnavailable(
+                "No LLM API key found. Create gemini_key.json or anthropic_key.json "
+                'with {"api_key": "..."}, or set GEMINI_API_KEY / ANTHROPIC_API_KEY.'
+            )
+
+    # -- per-provider calls ------------------------------------------------
+
+    def _judge_gemini(self, job: Job, page_text: str) -> Verdict:
+        from google.genai import errors, types
+
+        config = types.GenerateContentConfig(
+            system_instruction=self._system,
+            response_mime_type="application/json",
+            response_schema=Verdict,
+        )
+        for attempt in (1, 2):
+            try:
+                resp = self._client.models.generate_content(
+                    model=self.model,
+                    contents=_user_msg(job, page_text, self.cfg),
+                    config=config,
+                )
+                break
+            except errors.APIError as e:
+                if e.code in (401, 403):
+                    raise JudgeUnavailable(f"Gemini auth failed: {e}") from e
+                if e.code == 429 and attempt == 1:
+                    log.info("Gemini rate limit hit; sleeping 30s")
+                    time.sleep(30)
+                    continue
+                raise
+        verdict = resp.parsed
+        if verdict is None:
+            verdict = Verdict.model_validate_json(resp.text)
+        return verdict
+
+    def _judge_anthropic(self, job: Job, page_text: str) -> Verdict:
+        response = self._client.messages.parse(
+            model=self.model,
+            max_tokens=1024,
+            system=self._system,
+            messages=[{"role": "user", "content": _user_msg(job, page_text, self.cfg)}],
+            output_format=Verdict,
+        )
+        return response.parsed_output
+
+    # -- public API ----------------------------------------------------------
+
+    def judge_job(self, job: Job, page_text: str) -> Verdict:
+        if self.provider == "gemini":
+            return self._judge_gemini(job, page_text)
+        return self._judge_anthropic(job, page_text)
+
+    def judge_batch(self, items: list[tuple[Job, str]]) -> dict[str, Verdict]:
+        """Judge each (job, page_text). Returns {url: Verdict}; jobs whose call
+        failed are simply absent (skipped, retried next run)."""
+        verdicts: dict[str, Verdict] = {}
+        for i, (job, text) in enumerate(items, 1):
+            print(f"  [judge {i}/{len(items)}] {job.title[:60]}")
+            try:
+                verdicts[job.url] = self.judge_job(job, text)
+            except JudgeUnavailable:
+                raise
+            except Exception as e:
+                if self._is_fatal(e):
+                    raise JudgeUnavailable(f"{self.provider} API unavailable: {e}") from e
+                # Per-job failure: skip, don't mark seen — retried next run
+                log.warning("judge failed for %s: %s", job.url[:60], str(e)[:200])
+            if self.provider == "gemini" and i < len(items):
+                time.sleep(4)  # stay under the free tier's requests-per-minute cap
+        return verdicts
+
+    def _is_fatal(self, e: Exception) -> bool:
+        if self.provider == "anthropic":
+            import anthropic
+
+            return isinstance(
+                e,
+                (anthropic.AuthenticationError, anthropic.PermissionDeniedError,
+                 anthropic.APIConnectionError),
+            )
+        from google.genai import errors
+
+        return isinstance(e, errors.APIError) and e.code in (401, 403)
