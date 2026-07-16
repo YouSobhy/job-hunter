@@ -6,6 +6,7 @@ Sources return raw candidates. All relevance/geo judgment happens later
 
 import json
 import logging
+import re
 import time
 import urllib.error
 import urllib.parse
@@ -73,6 +74,46 @@ def fetch_remotive(term: str) -> list[Job]:
             posted=_normalize_date(j.get("publication_date", "")),
             description=j.get("description", ""),
             needs_fetch=False,   # Remotive gives the full description
+        ))
+    return out
+
+
+# -- WeWorkRemotely (RSS) --------------------------------------------------------
+
+_TAG_RE = re.compile(r"<[^>]+>")
+
+
+def fetch_weworkremotely() -> list[Job]:
+    url = "https://weworkremotely.com/categories/remote-customer-support-jobs.rss"
+    try:
+        req = urllib.request.Request(url, headers={"User-Agent": "JobSearch/3.0"})
+        with urllib.request.urlopen(req, timeout=15) as r:
+            xml_data = r.read().decode("utf-8", errors="ignore")
+        import xml.etree.ElementTree as ET
+
+        root = ET.fromstring(xml_data)
+    except Exception as e:
+        log.warning("WWR feed failed: %s", e)
+        return []
+
+    out = []
+    for item in root.findall(".//item"):
+        title = item.findtext("title", "")
+        link = item.findtext("link", "")
+        desc = _TAG_RE.sub(" ", item.findtext("description", ""))
+        company = ""
+        if ":" in title:
+            company, title = title.split(":", 1)
+            title = title.strip()
+        out.append(Job(
+            source="WeWorkRemotely",
+            title=title,
+            url=link,
+            company=company.strip(),
+            location="Remote",
+            posted=_normalize_date(item.findtext("pubDate", "")),
+            description=desc,   # RSS carries the full posting body
+            needs_fetch=False,
         ))
     return out
 
@@ -190,6 +231,9 @@ def gather_all(cfg: Config) -> list[Job]:
     for term in cfg.remotive_terms:
         print(f"[>] {term}")
         jobs.extend(fetch_remotive(term))
+
+    print("\n--- WeWorkRemotely (RSS) ---")
+    jobs.extend(fetch_weworkremotely())
 
     print(f"\n--- {engine} ---")
     for q in cfg.search_queries:
