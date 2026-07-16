@@ -135,8 +135,8 @@ class Judge:
             except errors.APIError as e:
                 if e.code in (401, 403):
                     raise JudgeUnavailable(f"Gemini auth failed: {e}") from e
-                if e.code == 429 and attempt == 1:
-                    log.info("Gemini rate limit hit; sleeping 30s")
+                if e.code in (429, 503) and attempt == 1:
+                    log.info("Gemini %s (rate limit/overload); sleeping 30s", e.code)
                     time.sleep(30)
                     continue
                 raise

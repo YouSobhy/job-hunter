@@ -1,7 +1,7 @@
 {
   "sheet_name": "Remote Job Leads – Youssef",
   "model": "claude-haiku-4-5-20251001",
-  "gemini_model": "gemini-2.5-flash",
+  "gemini_model": "gemini-flash-latest",
   "max_llm_calls": 20,
   "fit_threshold": 6,
   "truncate_head_chars": 7000,

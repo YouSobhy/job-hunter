@@ -24,7 +24,7 @@ class Config:
     sheet_name: str
     model: str
     profile: str
-    gemini_model: str = "gemini-2.5-flash"
+    gemini_model: str = "gemini-flash-latest"
     max_llm_calls: int = 20
     fit_threshold: int = 6
     truncate_head_chars: int = 7000
