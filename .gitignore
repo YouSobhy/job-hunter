@@ -5,6 +5,7 @@ google_cse.json
 serpapi.json
 anthropic_key.json
 gemini_key.json
+telegram.json
 
 # Runtime state & output
 seen_jobs.json
@@ -13,6 +14,7 @@ job_results_*.txt
 scheduler_run.log
 status.json
 jobhunter.log*
+jobs.jsonl
 
 # Python
 __pycache__/

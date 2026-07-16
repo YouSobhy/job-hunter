@@ -6,3 +6,5 @@ google-auth
 ddgs
 playwright
 beautifulsoup4
+streamlit
+pandas

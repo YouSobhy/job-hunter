@@ -12,7 +12,7 @@ import sys
 import traceback
 from datetime import datetime
 
-from jobhunter import notify, runlog, sheet
+from jobhunter import notify, results, runlog, sheet, telegram
 from jobhunter.config import load_config
 from jobhunter.fetch import fetch_batch
 from jobhunter.judge import Judge, JudgeUnavailable
@@ -147,8 +147,9 @@ def main(dry_run: bool = False, max_llm: int | None = None) -> None:
     save_seen(seen)
 
     sheet.append_rows(ws, rows)
-    runlog.append_results([
+    entries = [
         {
+            "found": datetime.now().strftime("%Y-%m-%d"),
             "title": j.title, "company": v.company or j.company,
             "location": v.location_stated, "source": j.source,
             "posted": j.posted, "score": v.fit_score,
@@ -156,7 +157,10 @@ def main(dry_run: bool = False, max_llm: int | None = None) -> None:
             "url": j.url, "summary": f"{v.summary} | {v.reason}",
         }
         for j, v in accepted
-    ])
+    ]
+    runlog.append_results(entries)
+    results.append_jobs(entries)
+    telegram.notify_run(entries)
     notify.write_status(success=True, new_jobs=len(accepted), judged=len(verdicts))
     sheet.write_heartbeat(
         sh, f"Last run: {datetime.now().strftime('%Y-%m-%d %H:%M')} - {len(accepted)} new"
@@ -177,9 +181,11 @@ if __name__ == "__main__":
         print(f"[error] {e}")
         log.error("judge unavailable: %s", e)
         notify.write_status(success=False, error=str(e))
+        telegram.notify_run([], error=str(e))
         sys.exit(1)
     except Exception as e:
         traceback.print_exc()
         log.error("run failed: %s", e)
         notify.write_status(success=False, error=f"{type(e).__name__}: {e}")
+        telegram.notify_run([], error=f"{type(e).__name__}: {e}")
         sys.exit(1)

@@ -92,6 +92,31 @@ sheet's `Meta` tab and attempts a Windows toast.
 
 ---
 
+## Dashboard (PC)
+
+```
+dashboard.bat        # or: streamlit run dashboard.py
+```
+
+Opens at http://localhost:8501 — run status, a **Run now** button (fires the
+JobHunter scheduled task, so manual and scheduled runs never collide), and a
+filterable table of every accepted job from `jobs.jsonl`.
+
+## Telegram bot (phone)
+
+1. Message **@BotFather** on Telegram → `/newbot` → copy the token
+2. Create `telegram.json`: `{ "bot_token": "123456:ABC..." }`
+3. Start the bot: `Start-ScheduledTask -TaskName JobHunterBot`
+   (it also auto-starts at logon)
+4. Send `/start` to your bot — the first chat to do so becomes the owner;
+   everyone else is ignored
+
+Commands: `/run` (fire a search, get told when it finishes), `/status`,
+`/last N`. After every run — scheduled or manual — new jobs are pushed to
+the chat automatically, and failures send an alert.
+
+---
+
 ## Tools
 
 ```
@@ -108,9 +133,12 @@ python tools/cleanup_sheet.py --delete       # delete DEAD/REJECT rows
 ```
 JobHunter/
 ├── run.py                   # Entry point / pipeline orchestrator
+├── dashboard.py             # Streamlit dashboard (dashboard.bat to launch)
+├── telegram_bot.py          # Telegram bot (JobHunterBot task, at logon)
 ├── config.json              # Profile, search terms, thresholds, caps
 ├── requirements.txt
 ├── run_job_search.bat       # Scheduled-task entry point
+├── run_telegram_bot.bat     # Bot launcher for the JobHunterBot task
 ├── setup_scheduler.ps1      # Registers the JobHunter task (removes legacy tasks)
 ├── jobhunter/
 │   ├── config.py            # Paths + config/credential loading
@@ -121,15 +149,20 @@ JobHunter/
 │   ├── judge.py             # LLM structured relevance judge (Gemini or Claude)
 │   ├── store.py             # seen_jobs.json dedup
 │   ├── sheet.py             # Google Sheets output + heartbeat
+│   ├── results.py           # jobs.jsonl structured store (dashboard/bot data)
+│   ├── telegram.py          # Telegram send helpers
 │   ├── runlog.py            # Rotating logs
 │   └── notify.py            # status.json + stale-run alert
 ├── tools/
 │   ├── replay.py            # Re-judge past results from the log
-│   └── cleanup_sheet.py     # Re-judge existing sheet rows
+│   ├── cleanup_sheet.py     # Re-judge existing sheet rows
+│   └── seed_jobs_store.py   # One-time jobs.jsonl backfill from the text log
 │
 │   # Not tracked in git:
 ├── gemini_key.json
 ├── anthropic_key.json
+├── telegram.json
+├── jobs.jsonl
 ├── google_credentials.json
 ├── serpapi.json
 ├── seen_jobs.json
