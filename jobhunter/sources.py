@@ -220,7 +220,7 @@ def search_query(query: str, serpapi_key, cse_key, cx) -> list[Job]:
     return out
 
 
-def gather_all(cfg: Config) -> list[Job]:
+def gather_all(cfg: Config, include_wwr: bool = True) -> list[Job]:
     """All sources, raw. Throttles between search queries."""
     engine, serpapi_key, cse_key, cx = pick_engine()
     log.info("search engine: %s", engine)
@@ -232,8 +232,9 @@ def gather_all(cfg: Config) -> list[Job]:
         print(f"[>] {term}")
         jobs.extend(fetch_remotive(term))
 
-    print("\n--- WeWorkRemotely (RSS) ---")
-    jobs.extend(fetch_weworkremotely())
+    if include_wwr:
+        print("\n--- WeWorkRemotely (RSS) ---")
+        jobs.extend(fetch_weworkremotely())
 
     print(f"\n--- {engine} ---")
     for q in cfg.search_queries:

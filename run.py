@@ -1,10 +1,13 @@
 """JobHunter — daily remote-job search with an LLM relevance judge.
 
 Usage:
-    python run.py [--dry-run] [--max-llm N]
+    python run.py [--dry-run] [--max-llm N] [--terms "title 1" "title 2"]
 
 Pipeline: sources -> dedup -> prefilter (cap) -> fetch full text
-          -> Claude judge -> sheet + log + status
+          -> LLM judge -> sheet + log + status
+
+Custom mode: --terms, or a pending search_request.json (written by the
+dashboard/Telegram bot), replaces the configured search terms for one run.
 """
 
 import argparse
@@ -12,7 +15,7 @@ import sys
 import traceback
 from datetime import datetime
 
-from jobhunter import notify, results, runlog, sheet, telegram
+from jobhunter import notify, results, runlog, searches, sheet, telegram
 from jobhunter.config import load_config
 from jobhunter.fetch import fetch_batch
 from jobhunter.judge import Judge, JudgeUnavailable
@@ -24,14 +27,28 @@ from jobhunter.store import load_seen, normalize_url, save_seen
 log = runlog.setup_logging()
 
 
-def main(dry_run: bool = False, max_llm: int | None = None) -> None:
+def main(dry_run: bool = False, max_llm: int | None = None,
+         terms: list[str] | None = None) -> None:
     cfg = load_config()
     if max_llm is not None:
         cfg.max_llm_calls = max_llm
 
+    # Custom mode: CLI --terms wins; otherwise a pending request file
+    custom_terms = terms
+    if not custom_terms:
+        req = searches.consume_request()
+        if req:
+            custom_terms = req["terms"]
+    mode = "custom" if custom_terms else "scheduled"
+    if custom_terms:
+        cfg.remotive_terms = custom_terms
+        cfg.search_queries = [f'"{t}" remote' for t in custom_terms]
+
     print("=" * 70)
     print("  JobHunter - Remote Job Search (LLM-judged)")
     print(f"  {datetime.now().strftime('%Y-%m-%d %H:%M')}{'  [DRY RUN]' if dry_run else ''}")
+    if custom_terms:
+        print(f"  CUSTOM SEARCH: {', '.join(custom_terms)}")
     print("=" * 70)
 
     alert = notify.check_stale()
@@ -44,11 +61,11 @@ def main(dry_run: bool = False, max_llm: int | None = None) -> None:
         notify.toast(alert)
 
     # Fail fast on a missing API key before spending time on sources
-    judge = Judge(cfg)
+    judge = Judge(cfg, custom_terms=custom_terms)
     print(f"  Judge : {judge.provider} ({judge.model})")
 
     # -- Gather + dedup --------------------------------------------------
-    raw = gather_all(cfg)
+    raw = gather_all(cfg, include_wwr=not custom_terms)
     by_url = {}
     for j in raw:
         key = normalize_url(j.url)
@@ -58,25 +75,28 @@ def main(dry_run: bool = False, max_llm: int | None = None) -> None:
     new = {k: j for k, j in by_url.items() if k not in seen}
     print(f"\n  {len(raw)} raw hits | {len(by_url)} unique | {len(new)} unseen")
 
+    hb_label = "custom search" if custom_terms else "run"
     if not new:
         print(f"  No new jobs. ({len(seen)} already seen)")
         if not dry_run:
-            notify.write_status(success=True, new_jobs=0, judged=0)
+            notify.write_status(success=True, new_jobs=0, judged=0,
+                                mode=mode, terms=custom_terms)
             sheet.write_heartbeat(
-                sh, f"Last run: {datetime.now().strftime('%Y-%m-%d %H:%M')} - 0 new"
+                sh, f"Last {hb_label}: {datetime.now().strftime('%Y-%m-%d %H:%M')} - 0 new"
             )
         return
 
     # -- Prefilter (rank + cap LLM calls) ---------------------------------
-    candidates = prefilter(list(new.values()), cfg)
+    candidates = prefilter(list(new.values()), cfg, custom_terms=custom_terms)
     print(f"  {len(candidates)} candidate(s) after prefilter (cap {cfg.max_llm_calls})")
     if not candidates:
         if not dry_run:
             seen.update(new.keys())
             save_seen(seen)
-            notify.write_status(success=True, new_jobs=0, judged=0)
+            notify.write_status(success=True, new_jobs=0, judged=0,
+                                mode=mode, terms=custom_terms)
             sheet.write_heartbeat(
-                sh, f"Last run: {datetime.now().strftime('%Y-%m-%d %H:%M')} - 0 new"
+                sh, f"Last {hb_label}: {datetime.now().strftime('%Y-%m-%d %H:%M')} - 0 new"
             )
         return
 
@@ -123,9 +143,12 @@ def main(dry_run: bool = False, max_llm: int | None = None) -> None:
             accepted.append((j, v))
 
     accepted.sort(key=lambda p: p[1].fit_score, reverse=True)
+    if custom_terms:
+        for j, _v in accepted:
+            j.tags.append("CUSTOM")
 
     print(f"\n{'=' * 70}")
-    print(f"  {len(accepted)} accepted | {len(to_judge) - len(accepted)} rejected "
+    print(f"  {len(accepted)} accepted | {len(verdicts) - len(accepted)} rejected "
           f"| {len(dead_urls)} dead | {len(retry_urls)} retry-next-run")
     print(f"{'=' * 70}\n")
 
@@ -161,9 +184,10 @@ def main(dry_run: bool = False, max_llm: int | None = None) -> None:
     runlog.append_results(entries)
     results.append_jobs(entries)
     telegram.notify_run(entries)
-    notify.write_status(success=True, new_jobs=len(accepted), judged=len(verdicts))
+    notify.write_status(success=True, new_jobs=len(accepted), judged=len(verdicts),
+                        mode=mode, terms=custom_terms)
     sheet.write_heartbeat(
-        sh, f"Last run: {datetime.now().strftime('%Y-%m-%d %H:%M')} - {len(accepted)} new"
+        sh, f"Last {hb_label}: {datetime.now().strftime('%Y-%m-%d %H:%M')} - {len(accepted)} new"
     )
     print("[ok] Run complete.")
 
@@ -174,9 +198,11 @@ if __name__ == "__main__":
                         help="print would-be results; no writes")
     parser.add_argument("--max-llm", type=int, default=None,
                         help="override max LLM calls this run")
+    parser.add_argument("--terms", nargs="*", default=None,
+                        help="custom search: job titles to hunt for this run")
     args = parser.parse_args()
     try:
-        main(dry_run=args.dry_run, max_llm=args.max_llm)
+        main(dry_run=args.dry_run, max_llm=args.max_llm, terms=args.terms)
     except JudgeUnavailable as e:
         print(f"[error] {e}")
         log.error("judge unavailable: %s", e)

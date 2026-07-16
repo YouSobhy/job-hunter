@@ -98,9 +98,20 @@ sheet's `Meta` tab and attempts a Windows toast.
 dashboard.bat        # or: streamlit run dashboard.py
 ```
 
-Opens at http://localhost:8501 — run status, a **Run now** button (fires the
-JobHunter scheduled task, so manual and scheduled runs never collide), and a
-filterable table of every accepted job from `jobs.jsonl`.
+Opens at http://localhost:8501 — three tabs:
+
+- **Jobs** — card feed of every accepted job (`jobs.jsonl`) with score badges,
+  tag chips, the judge's reasoning, and sidebar filters
+- **Custom search** — search for specific job titles on demand: one-off
+  searches plus a saved-search list (add/edit/delete/run). A custom run uses
+  your titles instead of the configured terms for that one run; results are
+  tagged `CUSTOM`
+- **Activity** — jobs-per-week chart and last-run details
+
+All runs (Run now, custom, scheduled) go through the JobHunter scheduled task,
+so they never collide. Custom runs are requested via `search_request.json`,
+which `run.py` consumes at startup; the CLI equivalent is
+`python run.py --terms "title 1" "title 2"`.
 
 ## Telegram bot (phone)
 
@@ -111,9 +122,10 @@ filterable table of every accepted job from `jobs.jsonl`.
 4. Send `/start` to your bot — the first chat to do so becomes the owner;
    everyone else is ignored
 
-Commands: `/run` (fire a search, get told when it finishes), `/status`,
-`/last N`. After every run — scheduled or manual — new jobs are pushed to
-the chat automatically, and failures send an alert.
+Commands: `/run` (fire a search, get told when it finishes), `/search title1;
+title2` (custom search), `/search N` (run saved search #N), `/searches` (list
+saved searches), `/status`, `/last N`. After every run — scheduled or manual —
+new jobs are pushed to the chat automatically, and failures send an alert.
 
 ---
 
@@ -149,6 +161,7 @@ JobHunter/
 │   ├── judge.py             # LLM structured relevance judge (Gemini or Claude)
 │   ├── store.py             # seen_jobs.json dedup
 │   ├── sheet.py             # Google Sheets output + heartbeat
+│   ├── searches.py          # Saved searches + custom-search request file
 │   ├── results.py           # jobs.jsonl structured store (dashboard/bot data)
 │   ├── telegram.py          # Telegram send helpers
 │   ├── runlog.py            # Rotating logs

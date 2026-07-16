@@ -22,7 +22,8 @@ def read_status() -> dict:
 
 
 def write_status(*, success: bool, new_jobs: int = 0, judged: int = 0,
-                 error: str | None = None) -> None:
+                 error: str | None = None, mode: str = "scheduled",
+                 terms: list[str] | None = None) -> None:
     status = read_status()
     now = datetime.now().isoformat(timespec="seconds")
     status["last_run"] = now
@@ -31,6 +32,8 @@ def write_status(*, success: bool, new_jobs: int = 0, judged: int = 0,
     status["new_jobs"] = new_jobs
     status["judged"] = judged
     status["error"] = error
+    status["mode"] = mode
+    status["terms"] = terms or []
     STATUS_FILE.write_text(json.dumps(status, indent=2), encoding="utf-8")
 
 

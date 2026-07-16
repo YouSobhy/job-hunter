@@ -1,10 +1,13 @@
 """JobHunter Telegram bot — long-polls api.telegram.org, no extra deps.
 
 Commands (owner only):
-    /start   claim the bot (first /start binds your chat as owner)
-    /run     fire the JobHunter scheduled task; reports when it finishes
-    /status  last run / last success / counts
-    /last    show the N most recent accepted jobs (default 3)
+    /start     claim the bot (first /start binds your chat as owner)
+    /run       fire the JobHunter scheduled task; reports when it finishes
+    /search    custom search: "/search hr analyst; payroll lead" or "/search 2"
+               to run saved search #2
+    /searches  list saved searches
+    /status    last run / last success / counts
+    /last      show the N most recent accepted jobs (default 3)
 
 Setup: create a bot with @BotFather, put the token in telegram.json:
     {"bot_token": "123456:ABC..."}
@@ -16,9 +19,12 @@ import sys
 import time
 import urllib.error
 
+from datetime import datetime
+
 from jobhunter import runlog
 from jobhunter.notify import read_status
 from jobhunter.results import load_jobs
+from jobhunter.searches import load_saved, parse_terms, update_search, write_request
 from jobhunter.telegram import api_call, format_job, load_telegram, save_telegram
 
 log = runlog.setup_logging()
@@ -68,14 +74,17 @@ def status_text() -> str:
     return "\n".join(lines)
 
 
-def handle_run(send) -> None:
+def handle_run(send, terms: list[str] | None = None) -> None:
     if task_state() == "Running":
         send("A run is already in progress.")
         return
+    if terms:
+        write_request(terms, source="telegram")
     if not start_task():
         send("Could not start the scheduled task.")
         return
-    send("Run started - I'll report when it finishes.")
+    what = f"Custom search for: {', '.join(terms)}" if terms else "Run"
+    send(f"{what} started - I'll report when it finishes.")
     deadline = time.time() + RUN_TIMEOUT_S
     time.sleep(20)
     while time.time() < deadline:
@@ -105,8 +114,46 @@ def handle_last(send, arg: str) -> None:
         send(format_job(e))
 
 
+def handle_search(send, arg: str) -> None:
+    arg = arg.strip()
+    if not arg:
+        send("Usage:\n/search hr analyst; payroll lead\n/search 2  (run saved search #2, see /searches)")
+        return
+    saved = load_saved()
+    if arg.isdigit():
+        idx = int(arg) - 1
+        if not 0 <= idx < len(saved):
+            send(f"No saved search #{arg}. Send /searches to list them.")
+            return
+        update_search(idx, last_run=datetime.now().isoformat(timespec="seconds"))
+        handle_run(send, terms=saved[idx]["terms"])
+        return
+    terms = parse_terms(arg)
+    if not terms:
+        send("Couldn't parse any titles from that.")
+        return
+    handle_run(send, terms=terms)
+
+
+def handle_searches(send) -> None:
+    saved = load_saved()
+    if not saved:
+        send("No saved searches yet - create them in the dashboard, "
+             "or run a one-off with /search <titles>.")
+        return
+    lines = []
+    for i, s in enumerate(saved, 1):
+        lr = (s.get("last_run") or "never")[:16].replace("T", " ")
+        lines.append(f"{i}. {s['name']} - {', '.join(s['terms'])} (last run: {lr})")
+    lines.append("\nRun one with /search <number>")
+    send("\n".join(lines))
+
+
 HELP = (
     "/run - fire a job search now\n"
+    "/search t1; t2 - custom search for specific titles\n"
+    "/search N - run saved search number N\n"
+    "/searches - list saved searches\n"
     "/status - last run info\n"
     "/last N - show N most recent jobs (default 3)"
 )
@@ -171,6 +218,10 @@ def main() -> None:
             cmd = cmd.split("@")[0].lower()
             if cmd == "/run":
                 handle_run(send)
+            elif cmd == "/search":
+                handle_search(send, arg)
+            elif cmd == "/searches":
+                handle_searches(send)
             elif cmd == "/status":
                 send(status_text())
             elif cmd == "/last":

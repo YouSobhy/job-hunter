@@ -84,16 +84,21 @@ def is_valid_job_url(url: str) -> bool:
     return True
 
 
-def keyword_score(title: str, description: str) -> int:
+def keyword_score(title: str, description: str,
+                  custom_terms: list[str] | None = None) -> int:
     text = f"{title} {description}".lower()
     score = sum(1 for kw in SKILL_KEYWORDS if kw in text)
     score += sum(3 for kw in HIGH_VALUE_KEYWORDS if kw in text)
+    if custom_terms:
+        # Custom searches: the requested titles ARE the high-value keywords
+        score += sum(3 for t in custom_terms if t.lower() in text)
     if _SIDE_ROLE_RE.search(text):
         score += 2
     return score
 
 
-def prefilter(jobs: list[Job], cfg: Config) -> list[Job]:
+def prefilter(jobs: list[Job], cfg: Config,
+              custom_terms: list[str] | None = None) -> list[Job]:
     """Drop junk, rank by keyword score, cap at cfg.max_llm_calls."""
     kept: list[Job] = []
     for j in jobs:
@@ -101,7 +106,7 @@ def prefilter(jobs: list[Job], cfg: Config) -> list[Job]:
             continue
         if TITLE_BLOCKED_RE.search(j.title):
             continue
-        j.prescore = keyword_score(j.title, j.description)
+        j.prescore = keyword_score(j.title, j.description, custom_terms)
         if j.prescore < 1:
             continue
         if _SIDE_ROLE_RE.search(f"{j.title} {j.description}"):

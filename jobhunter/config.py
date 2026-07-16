@@ -25,6 +25,7 @@ class Config:
     model: str
     profile: str
     gemini_model: str = "gemini-flash-latest"
+    gemini_fallback_model: str = "gemini-flash-lite-latest"
     max_llm_calls: int = 20
     fit_threshold: int = 6
     truncate_head_chars: int = 7000

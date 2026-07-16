@@ -91,9 +91,18 @@ def _user_msg(job: Job, page_text: str, cfg: Config) -> str:
 
 
 class Judge:
-    def __init__(self, cfg: Config):
+    def __init__(self, cfg: Config, custom_terms: list[str] | None = None):
         self.cfg = cfg
         self._system = build_system_prompt(cfg)
+        if custom_terms:
+            self._system += (
+                "\n\nIMPORTANT — custom search override: for this search the "
+                "candidate is specifically hunting for these roles: "
+                + ", ".join(custom_terms)
+                + ". Treat postings matching these titles as core target roles "
+                "(fit 8-10 if they match well), even if they fall outside the "
+                "usual profile. Geo and language rules still apply unchanged."
+            )
         gemini_key = load_gemini_key()
         anthropic_key = load_anthropic_key()
         if gemini_key:
@@ -124,7 +133,9 @@ class Judge:
             response_mime_type="application/json",
             response_schema=Verdict,
         )
-        for attempt in (1, 2):
+        attempts = 0
+        while True:
+            attempts += 1
             try:
                 resp = self._client.models.generate_content(
                     model=self.model,
@@ -135,7 +146,18 @@ class Judge:
             except errors.APIError as e:
                 if e.code in (401, 403):
                     raise JudgeUnavailable(f"Gemini auth failed: {e}") from e
-                if e.code in (429, 503) and attempt == 1:
+                if attempts >= 3:
+                    raise
+                if e.code == 429 and "quota" in str(e).lower() and \
+                        self.model != self.cfg.gemini_fallback_model:
+                    # Daily quota exhausted on the primary model — switch to the
+                    # fallback (higher free-tier cap) for the rest of the run
+                    log.warning("Gemini daily quota hit on %s; switching to %s",
+                                self.model, self.cfg.gemini_fallback_model)
+                    print(f"  [judge] quota hit; switching to {self.cfg.gemini_fallback_model}")
+                    self.model = self.cfg.gemini_fallback_model
+                    continue
+                if e.code in (429, 503):
                     log.info("Gemini %s (rate limit/overload); sleeping 30s", e.code)
                     time.sleep(30)
                     continue
