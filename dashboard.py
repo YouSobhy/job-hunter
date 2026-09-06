@@ -1,8 +1,6 @@
 """JobHunter dashboard — run:  streamlit run dashboard.py  (or dashboard.bat)
 
 Tabs: Jobs (card feed) · Custom search (saved searches + one-off) · Activity.
-Runs always go through the JobHunter scheduled task so manual, custom, and
-scheduled runs never collide.
 """
 
 import html
@@ -13,47 +11,82 @@ from datetime import datetime
 import pandas as pd
 import streamlit as st
 
+from jobhunter.feedback import CATEGORIES, load_feedback, save_feedback
 from jobhunter.notify import read_status
 from jobhunter.results import load_jobs
 from jobhunter.searches import (add_search, delete_search, load_saved,
                                 parse_terms, update_search, write_request)
 
-st.set_page_config(page_title="JobHunter", page_icon="🎯", layout="wide")
+st.set_page_config(page_title="JobHunter Dashboard", page_icon="🎯", layout="wide")
 
 TASK_NAME = "JobHunter"
 _NO_WINDOW = getattr(subprocess, "CREATE_NO_WINDOW", 0)
 
-# Palette: categorical slot-1 blue accent; status colors for score badges
-ACCENT = "#2a78d6"
-GOOD = "#0ca30c"      # fit >= 8
-WARN = "#fab219"      # fit 6-7
-INK2 = "#52514e"
+# Styling Palette
+ACCENT = "#2563eb"        # Modern Primary Blue
+GOOD = "#059669"          # Emerald Green (fit >= 8)
+WARN = "#d97706"          # Amber (fit 6-7)
+MUTED = "#6b7280"         # Slate Grey
+PURPLE_CHIP = "#7c3aed"    # Freelance / Contract Tag Accent
 
 st.markdown(f"""
 <style>
-.jh-badge {{
-    display:inline-block; min-width:3.2em; text-align:center;
-    padding:2px 10px; border-radius:999px; font-weight:700; font-size:0.95rem;
-    color:#fff;
+/* Base Theme & Card Styling */
+.stApp {{
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
 }}
-.jh-badge.good {{ background:{GOOD}; }}
-.jh-badge.warn {{ background:{WARN}; color:#0b0b0b; }}
-.jh-badge.na   {{ background:#898781; }}
-.jh-chip {{
-    display:inline-block; padding:1px 9px; margin-right:6px;
-    border-radius:999px; font-size:0.75rem; font-weight:600;
-    background:#eef3fb; color:{ACCENT}; border:1px solid {ACCENT}33;
-}}
-.jh-meta {{ color:{INK2}; font-size:0.85rem; margin:2px 0 6px 0; }}
-.jh-title a {{ text-decoration:none; color:#0b0b0b; }}
-.jh-title a:hover {{ color:{ACCENT}; }}
-.jh-title {{ font-size:1.08rem; font-weight:700; margin-bottom:0; }}
-.jh-summary {{ font-size:0.92rem; margin-top:2px; }}
+
+/* Header Bar & Status Chips */
 .jh-statuschip {{
-    display:inline-block; padding:3px 12px; margin-right:8px;
-    border-radius:999px; font-size:0.82rem; font-weight:600;
-    background:#fcfcfb; border:1px solid #e1e0d9; color:{INK2};
+    display: inline-flex; align-items: center; padding: 4px 14px;
+    border-radius: 9999px; font-size: 0.83rem; font-weight: 500;
+    background: #f3f4f6; border: 1px solid #e5e7eb; color: #374151;
+    margin-right: 6px; margin-bottom: 6px;
 }}
+.jh-statuschip b {{ margin-left: 5px; font-weight: 700; color: #111827; }}
+
+/* Score Badges */
+.jh-badge {{
+    display: inline-block; min-width: 2.8em; text-align: center;
+    padding: 4px 10px; border-radius: 9999px; font-weight: 800; font-size: 1.05rem;
+    color: #ffffff; box-shadow: 0 2px 4px rgba(0,0,0,0.12);
+}}
+.jh-badge.good {{ background: {GOOD}; }}
+.jh-badge.warn {{ background: {WARN}; color: #ffffff; }}
+.jh-badge.na   {{ background: #6b7280; }}
+
+/* Tag Chips */
+.jh-chip {{
+    display: inline-block; padding: 2px 10px; margin-right: 6px; margin-bottom: 4px;
+    border-radius: 9999px; font-size: 0.75rem; font-weight: 700;
+    background: #eff6ff; color: {ACCENT}; border: 1px solid #bfdbfe;
+}}
+.jh-chip.freelance {{
+    background: #f5f3ff; color: {PURPLE_CHIP}; border: 1px solid #ddd6fe;
+}}
+.jh-chip.custom {{
+    background: #eff6ff; color: #1d4ed8; border: 1px solid #93c5fd;
+}}
+.jh-chip.geo-ok {{
+    background: #ecfdf5; color: #047857; border: 1px solid #a7f3d0;
+}}
+.jh-chip.geo-warn {{
+    background: #fffbeb; color: #b45309; border: 1px solid #fde68a;
+}}
+.jh-chip.feedback-bad {{
+    background: #fef2f2; color: #dc2626; border: 1px solid #fca5a5;
+}}
+.jh-chip.feedback-good {{
+    background: #ecfdf5; color: #059669; border: 1px solid #6ee7b7;
+}}
+
+/* Card Typography & Meta */
+.jh-title {{ font-size: 1.15rem; font-weight: 700; margin-bottom: 4px; line-height: 1.35; }}
+.jh-title a {{ text-decoration: none; color: #111827; transition: color 0.15s ease; }}
+.jh-title a:hover {{ color: {ACCENT}; text-decoration: underline; }}
+
+.jh-meta {{ color: #6b7280; font-size: 0.85rem; margin-bottom: 8px; font-weight: 500; }}
+.jh-summary {{ font-size: 0.94rem; color: #374151; margin-top: 6px; line-height: 1.45; }}
 </style>
 """, unsafe_allow_html=True)
 
@@ -87,6 +120,21 @@ def fire_run(terms: list[str] | None = None, saved_index: int | None = None) -> 
     if ok and saved_index is not None:
         update_search(saved_index, last_run=datetime.now().isoformat(timespec="seconds"))
     return ok
+
+
+def is_freelance(row: pd.Series) -> bool:
+    src = str(row.get("source", "")).lower()
+    tags = str(row.get("tags", "")).lower()
+    title = str(row.get("title", "")).lower()
+    summary = str(row.get("summary", "")).lower()
+
+    if any(k in src for k in ("upwork", "hacker news", "remoteok", "freelance", "contract")):
+        return True
+    if any(k in tags for k in ("freelance", "contract", "side_role")):
+        return True
+    if any(k in title or k in summary for k in ("freelance", "contractor", "contract role", "gig", "part-time", "part time", "fractional")):
+        return True
+    return False
 
 
 # -- Header -----------------------------------------------------------------------
@@ -136,22 +184,54 @@ tab_jobs, tab_search, tab_activity = st.tabs(["🗂  Jobs", "🔍  Custom search
 
 with tab_jobs:
     jobs = load_jobs()
+    feedback_db = load_feedback()
+
     if not jobs:
         st.info("No results yet — run the pipeline.")
     else:
         df = pd.DataFrame(jobs)
         df["score"] = pd.to_numeric(df["score"], errors="coerce").fillna(0).astype(int)
+        df["is_freelance"] = df.apply(is_freelance, axis=1)
+        df["fb_cat"] = df["url"].map(lambda u: feedback_db.get(u, {}).get("category"))
+        df["fb_label"] = df["url"].map(lambda u: feedback_db.get(u, {}).get("label"))
         df = df.sort_values(["found", "score"], ascending=[False, False])
 
         with st.sidebar:
             st.markdown("### Filters")
             min_score = st.slider("Min fit score", 0, 10, 0)
+            job_type_filter = st.selectbox("Job Type", ["All Types", "Full-time Only", "Freelance / Contract Only"])
+            hide_marked_bad = st.checkbox("Hide marked bad/irrelevant jobs", value=True)
+            feedback_filter = st.selectbox(
+                "Feedback Filter",
+                ["All Jobs", "Unmarked Only", "Location Restricted", "Irrelevant Role", "Language Requirement", "Expired", "Good Fit"]
+            )
             sources = st.multiselect("Source", sorted(df["source"].unique()))
             custom_only = st.checkbox("Custom-search results only")
             search = st.text_input("Search title / company / summary")
             max_cards = st.number_input("Cards shown", 10, 200, 40, step=10)
 
         view = df[df["score"] >= min_score]
+        if job_type_filter == "Full-time Only":
+            view = view[~view["is_freelance"]]
+        elif job_type_filter == "Freelance / Contract Only":
+            view = view[view["is_freelance"]]
+
+        if hide_marked_bad:
+            view = view[~view["fb_cat"].isin(["location_restricted", "irrelevant_role", "language_restricted", "expired"])]
+
+        if feedback_filter == "Unmarked Only":
+            view = view[view["fb_cat"].isna()]
+        elif feedback_filter == "Location Restricted":
+            view = view[view["fb_cat"] == "location_restricted"]
+        elif feedback_filter == "Irrelevant Role":
+            view = view[view["fb_cat"] == "irrelevant_role"]
+        elif feedback_filter == "Language Requirement":
+            view = view[view["fb_cat"] == "language_restricted"]
+        elif feedback_filter == "Expired":
+            view = view[view["fb_cat"] == "expired"]
+        elif feedback_filter == "Good Fit":
+            view = view[view["fb_cat"] == "good_fit"]
+
         if sources:
             view = view[view["source"].isin(sources)]
         if custom_only:
@@ -164,15 +244,39 @@ with tab_jobs:
                 | view["summary"].str.lower().str.contains(s, na=False)
             ]
 
-        st.caption(f"{len(view)} of {len(df)} jobs")
-        for _, row in view.head(int(max_cards)).iterrows():
+        st.caption(f"{len(view)} of {len(df)} jobs shown")
+        for i, (_, row) in enumerate(view.head(int(max_cards)).iterrows()):
             score = int(row["score"])
             badge_cls = "good" if score >= 8 else ("warn" if score >= 6 else "na")
             summary, _, reason = (row.get("summary") or "").partition(" | ")
-            chips_html = "".join(
-                f'<span class="jh-chip">{html.escape(t.strip())}</span>'
-                for t in (row.get("tags") or "").split(",") if t.strip()
-            )
+
+            # Build tag chips
+            raw_tags = [t.strip() for t in (row.get("tags") or "").split(",") if t.strip()]
+            chip_elements = []
+
+            # Add User Feedback tag if marked
+            fb_lbl = str(row["fb_label"]) if pd.notna(row.get("fb_label")) and str(row.get("fb_label")).strip() else None
+            if fb_lbl:
+                fb_cat = str(row.get("fb_cat") or "")
+                chip_cls = "jh-chip feedback-good" if fb_cat == "good_fit" else "jh-chip feedback-bad"
+                chip_elements.append(f'<span class="{chip_cls}">{html.escape(fb_lbl)}</span>')
+
+            # Add explicit Freelance/Contract tag if detected
+            if row["is_freelance"]:
+                chip_elements.append('<span class="jh-chip freelance">⚡ FREELANCE / CONTRACT</span>')
+
+            for t in raw_tags:
+                if t.upper() in ("SIDE_ROLE", "FREELANCE", "CONTRACT") and row["is_freelance"]:
+                    continue
+                chip_cls = "jh-chip"
+                if "CUSTOM" in t.upper():
+                    chip_cls += " custom"
+                elif "GEO" in t.upper() or "EGYPT" in t.upper():
+                    chip_cls += " geo-ok" if "EGYPT" in t.upper() else " geo-warn"
+                chip_elements.append(f'<span class="{chip_cls}">{html.escape(t)}</span>')
+
+            chips_html = "".join(chip_elements)
+
             meta = " · ".join(filter(None, [
                 html.escape(str(row.get("company") or "")),
                 html.escape(str(row.get("location") or "")),
@@ -190,9 +294,49 @@ with tab_jobs:
                         + (f'<div class="jh-summary">{html.escape(summary)}</div>' if summary else ""),
                         unsafe_allow_html=True,
                     )
-                    if reason:
-                        with st.expander("Judge's reasoning"):
-                            st.write(reason)
+
+                    fcol1, fcol2 = st.columns([3, 1])
+                    with fcol1:
+                        if reason:
+                            with st.expander("Judge's reasoning"):
+                                st.write(reason)
+                    with fcol2:
+                        u_key = f"{i}_{abs(hash(str(row['url'])))}"
+                        with st.popover("💬 Feedback", key=f"pop_{u_key}"):
+                            st.caption("Mark job feedback:")
+                            curr_fb = row.get("fb_cat") or "none"
+                            opts = [
+                                ("None", "clear"),
+                                ("📍 Location Restricted", "location_restricted"),
+                                ("❌ Irrelevant Role", "irrelevant_role"),
+                                ("🌐 Language Requirement", "language_restricted"),
+                                ("⏰ Expired / Dead Link", "expired"),
+                                ("👍 Good Fit / Applied", "good_fit"),
+                            ]
+                            idx = 0
+                            for o_i, (_, cat_val) in enumerate(opts):
+                                if cat_val == curr_fb:
+                                    idx = o_i
+                                    break
+
+                            with st.form(key=f"fb_form_{u_key}", border=False):
+                                selected_opt = st.radio(
+                                    "Category",
+                                    [o[0] for o in opts],
+                                    index=idx,
+                                    key=f"fb_radio_{u_key}"
+                                )
+                                submitted = st.form_submit_button("Save Feedback", use_container_width=True)
+                                if submitted:
+                                    target_cat = next(o[1] for o in opts if o[0] == selected_opt)
+                                    save_feedback(row["url"], target_cat)
+                                    for k in list(st.session_state.keys()):
+                                        if "fb_" in str(k) or "pop_" in str(k):
+                                            del st.session_state[k]
+                                    st.toast("Feedback saved!")
+                                    time.sleep(0.2)
+                                    st.rerun()
+
                 with c2:
                     st.markdown(
                         f'<span class="jh-badge {badge_cls}">{score}</span>',

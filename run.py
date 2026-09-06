@@ -132,7 +132,7 @@ def main(dry_run: bool = False, max_llm: int | None = None,
             continue
         ok = (
             v.fit_score >= cfg.fit_threshold
-            and v.geo in ("eligible", "unclear")
+            and v.geo == "eligible"
             and v.language_ok
             and v.role_type_ok
         )

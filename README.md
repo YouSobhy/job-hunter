@@ -53,6 +53,8 @@ playwright install chromium   # once, for the JS-page fallback
 
 - Gemini: get a key at https://aistudio.google.com/apikey, then set
   `GEMINI_API_KEY` or create `gemini_key.json`: `{ "api_key": "AIza..." }`
+- Grok (xAI): get a key at https://console.x.ai, then set `GROK_API_KEY` (or `XAI_API_KEY`)
+  or create `grok_key.json`: `{ "api_key": "xai-..." }`
 - Claude: set `ANTHROPIC_API_KEY` or create `anthropic_key.json`:
   `{ "api_key": "sk-ant-..." }` (needs prepaid API credits)
 

@@ -230,5 +230,19 @@ def main() -> None:
                 send(HELP)
 
 
+import socket
+
+
+def acquire_bot_lock():
+    try:
+        s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        s.bind(("127.0.0.1", 47819))
+        return s
+    except Exception:
+        sys.exit(0)  # Another bot instance is already running
+
+
 if __name__ == "__main__":
+    _bot_lock = acquire_bot_lock()
     main()
+

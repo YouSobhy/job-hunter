@@ -18,14 +18,16 @@ from .models import Job
 
 log = logging.getLogger("jobhunter")
 
-# DuckDuckGo/SerpAPI: prepend site: targets so we hit company/ATS pages
+# DuckDuckGo/SerpAPI: prepend site: targets so we hit company/ATS/freelance pages
 _DDG_SITES = (
     "site:boards.greenhouse.io OR site:jobs.lever.co "
     "OR site:jobs.ashbyhq.com OR site:apply.workable.com "
     "OR site:careers.smartrecruiters.com OR site:jobs.jobvite.com "
     "OR site:deel.com OR site:remote.com OR site:rippling.com "
     "OR site:hibob.com OR site:personio.com OR site:freshworks.com "
-    "OR site:zendesk.com OR site:bamboohr.com OR site:chargebee.com"
+    "OR site:zendesk.com OR site:bamboohr.com OR site:chargebee.com "
+    "OR site:upwork.com/freelance-jobs OR site:contra.com/opportunity "
+    "OR site:peopleperhour.com/freelance-jobs OR site:freelancer.com/projects"
 )
 
 
@@ -115,6 +117,104 @@ def fetch_weworkremotely() -> list[Job]:
             description=desc,   # RSS carries the full posting body
             needs_fetch=False,
         ))
+    return out
+
+
+# -- Upwork (Freelance RSS) -----------------------------------------------------
+
+def fetch_upwork(terms: list[str]) -> list[Job]:
+    out: list[Job] = []
+    import xml.etree.ElementTree as ET
+
+    for term in terms:
+        url = f"https://www.upwork.com/ab/feed/jobs/rss?q={urllib.parse.quote(term)}"
+        try:
+            req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"})
+            with urllib.request.urlopen(req, timeout=15) as r:
+                xml_data = r.read().decode("utf-8", errors="ignore")
+            root = ET.fromstring(xml_data)
+            for item in root.findall(".//item"):
+                title = item.findtext("title", "").strip()
+                link = item.findtext("link", "").strip()
+                desc = _TAG_RE.sub(" ", item.findtext("description", "")).strip()
+                pub_date = item.findtext("pubDate", "")
+                if title and link:
+                    out.append(Job(
+                        source="Upwork (Freelance)",
+                        title=title,
+                        url=link,
+                        company="Upwork Client",
+                        location="Remote",
+                        posted=_normalize_date(pub_date),
+                        description=desc,
+                        needs_fetch=False,
+                    ))
+        except Exception as e:
+            log.warning("Upwork RSS failed for %s: %s", term, e)
+    return out
+
+
+# -- Hacker News (Contract) -----------------------------------------------------
+
+def fetch_hn_freelance(terms: list[str] | None = None) -> list[Job]:
+    query_terms = terms if terms else ["implementation", "support", "onboarding", "freelance"]
+    out: list[Job] = []
+    today = datetime.now().strftime("%Y-%m-%d")
+    for q in query_terms[:4]:
+        url = f"https://hn.algolia.com/api/v1/search?tags=comment&query={urllib.parse.quote(q)}"
+        data = fetch_json(url)
+        if not data or "hits" not in data:
+            continue
+        for hit in data.get("hits", []):
+            text = _TAG_RE.sub(" ", hit.get("comment_text", "")).strip()
+            if len(text) < 40:
+                continue
+            story_title = hit.get("story_title", "")
+            story_url = f"https://news.ycombinator.com/item?id={hit.get('objectID')}"
+            first_line = text.split(". ")[0].split("\n")[0][:80].strip()
+            title = f"{first_line} ({story_title[:30]})" if story_title else first_line
+            out.append(Job(
+                source="Hacker News (Contract)",
+                title=title or f"{q.capitalize()} Contract Role",
+                url=story_url,
+                company="HN Startup/Founder",
+                location="Remote",
+                posted=_normalize_date(hit.get("created_at", today)),
+                description=text,
+                needs_fetch=False,
+            ))
+    return out
+
+
+# -- RemoteOK (Contract) --------------------------------------------------------
+
+def fetch_remoteok_contract(terms: list[str] | None = None) -> list[Job]:
+    url = "https://remoteok.com/api"
+    data = fetch_json(url, headers={"User-Agent": "Mozilla/5.0"})
+    if not isinstance(data, list):
+        return []
+    out = []
+    keywords = [t.lower() for t in (terms or ["support", "implementation", "onboarding", "coordinator", "customer", "contract"])]
+    for j in data:
+        if not isinstance(j, dict):
+            continue
+        title = j.get("position", "")
+        url_job = j.get("url", "")
+        if not title or not url_job:
+            continue
+        tags = [str(t).lower() for t in j.get("tags", [])]
+        text = f"{title} {' '.join(tags)} {j.get('description', '')}".lower()
+        if any(k in text for k in keywords):
+            out.append(Job(
+                source="RemoteOK (Contract)",
+                title=title,
+                url=url_job,
+                company=j.get("company", ""),
+                location=j.get("location", "Remote"),
+                posted=_normalize_date(j.get("date", "")),
+                description=_TAG_RE.sub(" ", j.get("description", "")),
+                needs_fetch=False,
+            ))
     return out
 
 
@@ -220,7 +320,7 @@ def search_query(query: str, serpapi_key, cse_key, cx) -> list[Job]:
     return out
 
 
-def gather_all(cfg: Config, include_wwr: bool = True) -> list[Job]:
+def gather_all(cfg: Config, include_wwr: bool = True, include_freelance: bool = True) -> list[Job]:
     """All sources, raw. Throttles between search queries."""
     engine, serpapi_key, cse_key, cx = pick_engine()
     log.info("search engine: %s", engine)
@@ -236,6 +336,17 @@ def gather_all(cfg: Config, include_wwr: bool = True) -> list[Job]:
         print("\n--- WeWorkRemotely (RSS) ---")
         jobs.extend(fetch_weworkremotely())
 
+    if include_freelance:
+        print("\n--- Upwork (Freelance RSS) ---")
+        freelance_query_terms = cfg.freelance_terms if cfg.freelance_terms else cfg.remotive_terms[:5]
+        jobs.extend(fetch_upwork(freelance_query_terms))
+
+        print("\n--- Hacker News (Contract) ---")
+        jobs.extend(fetch_hn_freelance())
+
+        print("\n--- RemoteOK (Contract) ---")
+        jobs.extend(fetch_remoteok_contract())
+
     print(f"\n--- {engine} ---")
     for q in cfg.search_queries:
         label = q.split('"')[1] if '"' in q else q[:60]
@@ -246,3 +357,4 @@ def gather_all(cfg: Config, include_wwr: bool = True) -> list[Job]:
         elif not cse_key:
             time.sleep(4)  # heavier throttle for DDG
     return jobs
+

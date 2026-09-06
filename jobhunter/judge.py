@@ -15,7 +15,8 @@ from typing import Literal
 
 from pydantic import BaseModel
 
-from .config import Config, load_anthropic_key, load_gemini_key
+from .config import (Config, load_anthropic_key, load_gemini_key,
+                     load_grok_key, load_groq_key)
 from .models import Job
 
 log = logging.getLogger("jobhunter")
@@ -48,13 +49,11 @@ Judge each posting on:
    (engineering, design, quota-carrying sales, marketing, recruiting, etc. —
    also set role_type_ok=false for those).
 
-2. geo: "eligible" only if a candidate based in Egypt can actually be hired —
+2. geo: "eligible" ONLY if an international candidate based in Egypt (UTC+2) can actually be hired —
    worldwide/global/anywhere, EMEA, Middle East, Africa, or explicit Egypt.
-   "ineligible" if US-only, EU-only, UK-only, single-foreign-country, on-site
-   anywhere outside Egypt, US work authorization required, or US-business-hours-only.
-   "unclear" only if the page truly does not say.
-   Be strict: "Remote" alone from a US company listing US benefits (401k, US health
-   insurance, W-2) usually means US-only — call that "ineligible" and say why.
+   "ineligible" if the posting specifies ANY single country/region restriction outside Egypt (e.g. US-only, EU-only, UK-only, Canada-only, Poland-only, LatAm-only, Australia-only), requires living/having lived in a specific country outside Egypt (e.g. "must have lived in the US"), requires local work authorization/residency (e.g. W-2, Green Card, US work visa), or requires strict US-business-hours.
+   "unclear" if the posting does not explicitly specify location eligibility.
+   Be extremely strict: "Remote" from a US/EU company listing local benefits (401k, W-2, US health insurance) or location requirements outside Egypt MUST be marked "ineligible".
 
 3. language_ok: false if fluency in any language other than English or Arabic is
    required (e.g. German postings marked "(m/w/d)" that require German, "French +
@@ -68,7 +67,7 @@ Also extract:
 - location_stated: the location text exactly as the posting states it (e.g.
   "Remote - EMEA", "Austin, TX", "Remote (US only)"). Use "Not stated" if absent.
 - reason: one sentence explaining the verdict.
-- summary: one sentence describing the job itself."""
+- summary: one sentence describing the job itself. Reply in valid JSON format matching the schema."""
 
 
 def _truncate(text: str, cfg: Config) -> str:
@@ -104,6 +103,8 @@ class Judge:
                 "usual profile. Geo and language rules still apply unchanged."
             )
         gemini_key = load_gemini_key()
+        grok_key = load_grok_key()
+        groq_key = load_groq_key()
         anthropic_key = load_anthropic_key()
         if gemini_key:
             from google import genai
@@ -111,6 +112,18 @@ class Judge:
             self.provider = "gemini"
             self.model = cfg.gemini_model
             self._client = genai.Client(api_key=gemini_key)
+        elif grok_key:
+            from openai import OpenAI
+
+            self.provider = "grok"
+            self.model = cfg.grok_model
+            self._client = OpenAI(api_key=grok_key, base_url="https://api.x.ai/v1")
+        elif groq_key:
+            from openai import OpenAI
+
+            self.provider = "groq"
+            self.model = cfg.groq_model
+            self._client = OpenAI(api_key=groq_key, base_url="https://api.groq.com/openai/v1")
         elif anthropic_key:
             import anthropic
 
@@ -119,9 +132,43 @@ class Judge:
             self._client = anthropic.Anthropic(api_key=anthropic_key)
         else:
             raise JudgeUnavailable(
-                "No LLM API key found. Create gemini_key.json or anthropic_key.json "
-                'with {"api_key": "..."}, or set GEMINI_API_KEY / ANTHROPIC_API_KEY.'
+                "No LLM API key found. Create gemini_key.json, grok_key.json, groq_key.json, or anthropic_key.json "
+                'with {"api_key": "..."}, or set GEMINI_API_KEY / GROK_API_KEY / GROQ_API_KEY / ANTHROPIC_API_KEY.'
             )
+
+    def _switch_fallback_provider(self) -> bool:
+        grok_key = load_grok_key()
+        groq_key = load_groq_key()
+        anthropic_key = load_anthropic_key()
+        if grok_key and self.provider != "grok":
+            from openai import OpenAI
+
+            log.warning("Switching LLM provider to Grok (%s)", self.cfg.grok_model)
+            print(f"  [judge] switching provider to Grok ({self.cfg.grok_model})")
+            self.provider = "grok"
+            self.model = self.cfg.grok_model
+            self._client = OpenAI(api_key=grok_key, base_url="https://api.x.ai/v1")
+            return True
+        elif groq_key and self.provider != "groq":
+            from openai import OpenAI
+
+            log.warning("Switching LLM provider to Groq (%s)", self.cfg.groq_model)
+            print(f"  [judge] switching provider to Groq ({self.cfg.groq_model})")
+            self.provider = "groq"
+            self.model = self.cfg.groq_model
+            self._client = OpenAI(api_key=groq_key, base_url="https://api.groq.com/openai/v1")
+            return True
+        elif anthropic_key and self.provider != "anthropic":
+            import anthropic
+
+            log.warning("Switching LLM provider to Anthropic Claude (%s)", self.cfg.model)
+            print(f"  [judge] switching provider to Anthropic Claude ({self.cfg.model})")
+            self.provider = "anthropic"
+            self.model = self.cfg.model
+            self._client = anthropic.Anthropic(api_key=anthropic_key)
+            return True
+        return False
+
 
     # -- per-provider calls ------------------------------------------------
 
@@ -147,16 +194,18 @@ class Judge:
                 if e.code in (401, 403):
                     raise JudgeUnavailable(f"Gemini auth failed: {e}") from e
                 if attempts >= 3:
+                    if self._switch_fallback_provider():
+                        return self.judge_job(job, page_text)
                     raise
-                if e.code == 429 and "quota" in str(e).lower() and \
-                        self.model != self.cfg.gemini_fallback_model:
-                    # Daily quota exhausted on the primary model — switch to the
-                    # fallback (higher free-tier cap) for the rest of the run
-                    log.warning("Gemini daily quota hit on %s; switching to %s",
-                                self.model, self.cfg.gemini_fallback_model)
-                    print(f"  [judge] quota hit; switching to {self.cfg.gemini_fallback_model}")
-                    self.model = self.cfg.gemini_fallback_model
-                    continue
+                if e.code == 429 and "quota" in str(e).lower():
+                    if self.model != self.cfg.gemini_fallback_model:
+                        log.warning("Gemini daily quota hit on %s; switching to %s",
+                                    self.model, self.cfg.gemini_fallback_model)
+                        print(f"  [judge] quota hit; switching to {self.cfg.gemini_fallback_model}")
+                        self.model = self.cfg.gemini_fallback_model
+                        continue
+                    elif self._switch_fallback_provider():
+                        return self.judge_job(job, page_text)
                 if e.code in (429, 503):
                     log.info("Gemini %s (rate limit/overload); sleeping 30s", e.code)
                     time.sleep(30)
@@ -166,6 +215,31 @@ class Judge:
         if verdict is None:
             verdict = Verdict.model_validate_json(resp.text)
         return verdict
+
+    def _judge_grok(self, job: Job, page_text: str) -> Verdict:
+        attempts = 0
+        while True:
+            attempts += 1
+            try:
+                resp = self._client.chat.completions.create(
+                    model=self.model,
+                    messages=[
+                        {"role": "system", "content": self._system},
+                        {"role": "user", "content": _user_msg(job, page_text, self.cfg)},
+                    ],
+                    response_format={"type": "json_object"},
+                )
+                content = resp.choices[0].message.content
+                return Verdict.model_validate_json(content)
+            except Exception as e:
+                if self._is_fatal(e):
+                    raise JudgeUnavailable(f"Grok auth/permission error: {e}") from e
+                if attempts >= 3:
+                    if self._switch_fallback_provider():
+                        return self.judge_job(job, page_text)
+                    raise
+                log.info("Grok API error (%s); sleeping 10s before retry", e)
+                time.sleep(10)
 
     def _judge_anthropic(self, job: Job, page_text: str) -> Verdict:
         response = self._client.messages.parse(
@@ -182,6 +256,8 @@ class Judge:
     def judge_job(self, job: Job, page_text: str) -> Verdict:
         if self.provider == "gemini":
             return self._judge_gemini(job, page_text)
+        elif self.provider in ("grok", "groq"):
+            return self._judge_grok(job, page_text)
         return self._judge_anthropic(job, page_text)
 
     def judge_batch(self, items: list[tuple[Job, str]]) -> dict[str, Verdict]:
@@ -204,6 +280,13 @@ class Judge:
         return verdicts
 
     def _is_fatal(self, e: Exception) -> bool:
+        if self.provider in ("grok", "groq"):
+            import openai
+
+            return isinstance(
+                e,
+                (openai.AuthenticationError, openai.PermissionDeniedError),
+            )
         if self.provider == "anthropic":
             import anthropic
 
@@ -215,3 +298,5 @@ class Judge:
         from google.genai import errors
 
         return isinstance(e, errors.APIError) and e.code in (401, 403)
+
+
