@@ -24,6 +24,12 @@ jobs:
           python-version: '3.11'
           cache: 'pip'
 
+      - name: Install Dependencies
+        run: |
+          python -m venv venv
+          source venv/bin/activate
+          pip install -r requirements.txt
+
       - name: Install Firebase CLI
         run: npm install -g firebase-tools
 
