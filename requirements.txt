@@ -9,3 +9,9 @@ playwright
 beautifulsoup4
 streamlit
 pandas
+
+fastapi
+uvicorn
+firebase-functions
+firebase-admin
+a2wsgi

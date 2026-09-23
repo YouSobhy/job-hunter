@@ -49,11 +49,14 @@ Judge each posting on:
    (engineering, design, quota-carrying sales, marketing, recruiting, etc. —
    also set role_type_ok=false for those).
 
-2. geo: "eligible" ONLY if an international candidate based in Egypt (UTC+2) can actually be hired —
-   worldwide/global/anywhere, EMEA, Middle East, Africa, or explicit Egypt.
-   "ineligible" if the posting specifies ANY single country/region restriction outside Egypt (e.g. US-only, EU-only, UK-only, Canada-only, Poland-only, LatAm-only, Australia-only), requires living/having lived in a specific country outside Egypt (e.g. "must have lived in the US"), requires local work authorization/residency (e.g. W-2, Green Card, US work visa), or requires strict US-business-hours.
-   "unclear" if the posting does not explicitly specify location eligibility.
-   Be extremely strict: "Remote" from a US/EU company listing local benefits (401k, W-2, US health insurance) or location requirements outside Egypt MUST be marked "ineligible".
+2. geo: "eligible" ONLY if an international candidate residing in Egypt (UTC+2) can actually be hired —
+   i.e. the posting explicitly states Worldwide, Global, Remote Anywhere, EMEA, Middle East, Africa, or Egypt.
+   "ineligible" if:
+   - The posting is located in or restricted to ANY single specific country/city outside Egypt (e.g. India/New Delhi, US, EU, UK, Canada, Philippines, Germany, LatAm, Australia, etc.) UNLESS it explicitly states that candidates from outside that country (Worldwide/EMEA/Egypt) are eligible.
+   - The posting requires local work authorization, visa, citizenship, or residency in a country outside Egypt (e.g. W-2, Green Card, India PF, UK Right to Work).
+   - The posting offers benefits tied exclusively to a foreign country (e.g. US 401k, UK NHS, India PF/Gratuity).
+   "unclear" if location eligibility is not specified.
+   Be extremely strict: a job located in "New Delhi, India" or "Austin, TX" or "London, UK" without explicit global/EMEA remote eligibility MUST be marked "ineligible".
 
 3. language_ok: false if fluency in any language other than English or Arabic is
    required (e.g. German postings marked "(m/w/d)" that require German, "French +
@@ -65,7 +68,7 @@ Judge each posting on:
 Also extract:
 - company: the real company name as stated on the page (not the job board name).
 - location_stated: the location text exactly as the posting states it (e.g.
-  "Remote - EMEA", "Austin, TX", "Remote (US only)"). Use "Not stated" if absent.
+  "Remote - EMEA", "Austin, TX", "New Delhi, India"). Use "Not stated" if absent.
 - reason: one sentence explaining the verdict.
 - summary: one sentence describing the job itself. Reply in valid JSON format matching the schema."""
 
@@ -255,10 +258,23 @@ class Judge:
 
     def judge_job(self, job: Job, page_text: str) -> Verdict:
         if self.provider == "gemini":
-            return self._judge_gemini(job, page_text)
+            v = self._judge_gemini(job, page_text)
         elif self.provider in ("grok", "groq"):
-            return self._judge_grok(job, page_text)
-        return self._judge_anthropic(job, page_text)
+            v = self._judge_grok(job, page_text)
+        else:
+            v = self._judge_anthropic(job, page_text)
+
+        # Programmatic safety check: override single foreign locations (India, US, UK, etc.) to ineligible
+        loc_check = (str(job.location or "") + " " + str(v.location_stated or "")).lower()
+        body_check = (str(job.title or "") + " " + str(page_text[:2000])).lower()
+        is_global = any(g in body_check or g in loc_check for g in ("worldwide", "global", "emea", "middle east", "egypt", "remote anywhere"))
+
+        single_country_keywords = ("india", "new delhi", "delhi", "philippines", "manila", "united states", "us only", "usa", "uk only", "london", "canada", "australia", "germany", "france")
+        if any(ck in loc_check for ck in single_country_keywords) and not is_global:
+            v.geo = "ineligible"
+            v.reason = f"Posting location ({v.location_stated or job.location}) is restricted to a single foreign country outside Egypt."
+
+        return v
 
     def judge_batch(self, items: list[tuple[Job, str]]) -> dict[str, Verdict]:
         """Judge each (job, page_text). Returns {url: Verdict}; jobs whose call

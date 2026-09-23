@@ -7,7 +7,7 @@
   "fit_threshold": 6,
   "truncate_head_chars": 7000,
   "truncate_tail_chars": 1000,
-  "profile": "Youssef Sobhy, based in Egypt (UTC+2). Target roles: implementation specialist, configuration specialist, implementation consultant, customer/technical support specialist, customer success manager/specialist, SaaS onboarding specialist, integration specialist, project coordinator, project support specialist, operations coordinator/specialist, junior project manager, workflow coordinator. Domain experience: HRMS/HRIS, payroll, SaaS configuration, API integrations (REST, webhooks), data migration, UAT, automation (n8n, Power Automate), task tracking, team coordination. Languages: English and Arabic only. Part-time, contract, and fractional roles are welcome in addition to full-time. Strong preference for worldwide/EMEA-friendly remote roles.",
+  "profile": "Youssef Sobhy, based in Egypt (UTC+2). Target roles: implementation specialist, configuration specialist, implementation consultant, customer/technical support specialist, customer success manager/specialist, SaaS onboarding specialist, integration specialist, project coordinator, project support specialist, operations coordinator/specialist, junior project manager, workflow coordinator, solutions engineer. Domain experience: HRMS/HRIS, payroll, SaaS configuration, API integrations (REST, webhooks), data migration, UAT, automation (n8n, Power Automate), task tracking, team coordination. Languages: English and Arabic only. Part-time, contract, and fractional roles are welcome in addition to full-time. Strong preference for worldwide/EMEA-friendly remote roles.",
   "remotive_terms": [
     "implementation specialist",
     "configuration specialist",
@@ -30,7 +30,8 @@
     "project coordinator",
     "project support",
     "operations coordinator",
-    "junior project manager"
+    "junior project manager",
+    "solutions engineer"
   ],
   "search_queries": [
     "\"implementation specialist\" remote",
@@ -48,13 +49,16 @@
     "\"project support\" saas remote",
     "\"operations coordinator\" saas remote",
     "\"junior project manager\" remote",
-    "\"project coordinator\" remote"
+    "\"project coordinator\" remote",
+    "\"solutions engineer\" remote",
+    "\"solutions engineer\" saas remote"
   ],
   "freelance_terms": [
     "implementation specialist",
     "customer support",
     "saas onboarding",
     "integration specialist",
-    "project coordinator"
+    "project coordinator",
+    "solutions engineer"
   ]
 }

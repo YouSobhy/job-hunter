@@ -5,7 +5,11 @@ import os
 from dataclasses import dataclass, field
 from pathlib import Path
 
-BASE_DIR = Path(__file__).resolve().parent.parent
+if os.environ.get("FIREBASE_CONFIG") or os.environ.get("FUNCTIONS_WORKER_RUNTIME"):
+    BASE_DIR = Path("/tmp/jobhunter")
+    BASE_DIR.mkdir(parents=True, exist_ok=True)
+else:
+    BASE_DIR = Path(__file__).resolve().parent.parent
 
 CONFIG_FILE = BASE_DIR / "config.json"
 SEEN_FILE = BASE_DIR / "seen_jobs.json"

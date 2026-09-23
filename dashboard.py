@@ -31,17 +31,37 @@ PURPLE_CHIP = "#7c3aed"    # Freelance / Contract Tag Accent
 
 st.markdown(f"""
 <style>
+/* Emil Kowalski / Better UI Polish Variables */
+:root {{
+    --ease-out: cubic-bezier(0.23, 1, 0.32, 1);
+    --ease-in-out: cubic-bezier(0.77, 0, 0.175, 1);
+}}
+
 /* Base Theme & Card Styling */
 .stApp {{
     font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+}}
+
+/* Button Polish (Interruptible, scale on active) */
+div[data-testid="stButton"] button {{
+    transition: transform 160ms var(--ease-out), background-color 160ms var(--ease-out) !important;
+}}
+div[data-testid="stButton"] button:active {{
+    transform: scale(0.97) !important;
 }}
 
 /* Header Bar & Status Chips */
 .jh-statuschip {{
     display: inline-flex; align-items: center; padding: 4px 14px;
     border-radius: 9999px; font-size: 0.83rem; font-weight: 500;
-    background: #f3f4f6; border: 1px solid #e5e7eb; color: #374151;
+    background: #f3f4f6; border: 1px solid transparent; color: #374151;
     margin-right: 6px; margin-bottom: 6px;
+    box-shadow: 0 1px 2px oklch(0 0 0 / 0.05); /* Depth over borders */
+    transition: transform 160ms var(--ease-out), filter 160ms var(--ease-out);
+}}
+.jh-statuschip:hover {{
+    transform: translateY(-1px);
+    filter: brightness(0.97);
 }}
 .jh-statuschip b {{ margin-left: 5px; font-weight: 700; color: #111827; }}
 
@@ -49,7 +69,8 @@ st.markdown(f"""
 .jh-badge {{
     display: inline-block; min-width: 2.8em; text-align: center;
     padding: 4px 10px; border-radius: 9999px; font-weight: 800; font-size: 1.05rem;
-    color: #ffffff; box-shadow: 0 2px 4px rgba(0,0,0,0.12);
+    color: #ffffff; 
+    box-shadow: 0 4px 12px oklch(0 0 0 / 0.12); /* Optical depth */
 }}
 .jh-badge.good {{ background: {GOOD}; }}
 .jh-badge.warn {{ background: {WARN}; color: #ffffff; }}
@@ -59,31 +80,35 @@ st.markdown(f"""
 .jh-chip {{
     display: inline-block; padding: 2px 10px; margin-right: 6px; margin-bottom: 4px;
     border-radius: 9999px; font-size: 0.75rem; font-weight: 700;
-    background: #eff6ff; color: {ACCENT}; border: 1px solid #bfdbfe;
+    background: #eff6ff; color: {ACCENT}; border: 1px solid transparent;
+    transition: transform 160ms var(--ease-out), filter 160ms var(--ease-out);
+}}
+.jh-chip:active {{
+    transform: scale(0.97);
 }}
 .jh-chip.freelance {{
-    background: #f5f3ff; color: {PURPLE_CHIP}; border: 1px solid #ddd6fe;
+    background: #f5f3ff; color: {PURPLE_CHIP}; 
 }}
 .jh-chip.custom {{
-    background: #eff6ff; color: #1d4ed8; border: 1px solid #93c5fd;
+    background: #eff6ff; color: #1d4ed8; 
 }}
 .jh-chip.geo-ok {{
-    background: #ecfdf5; color: #047857; border: 1px solid #a7f3d0;
+    background: #ecfdf5; color: #047857; 
 }}
 .jh-chip.geo-warn {{
-    background: #fffbeb; color: #b45309; border: 1px solid #fde68a;
+    background: #fffbeb; color: #b45309; 
 }}
 .jh-chip.feedback-bad {{
-    background: #fef2f2; color: #dc2626; border: 1px solid #fca5a5;
+    background: #fef2f2; color: #dc2626; 
 }}
 .jh-chip.feedback-good {{
-    background: #ecfdf5; color: #059669; border: 1px solid #6ee7b7;
+    background: #ecfdf5; color: #059669; 
 }}
 
 /* Card Typography & Meta */
 .jh-title {{ font-size: 1.15rem; font-weight: 700; margin-bottom: 4px; line-height: 1.35; }}
-.jh-title a {{ text-decoration: none; color: #111827; transition: color 0.15s ease; }}
-.jh-title a:hover {{ color: {ACCENT}; text-decoration: underline; }}
+.jh-title a {{ text-decoration: none; color: #111827; transition: color 150ms var(--ease-out); }}
+.jh-title a:hover {{ color: {ACCENT}; }}
 
 .jh-meta {{ color: #6b7280; font-size: 0.85rem; margin-bottom: 8px; font-weight: 500; }}
 .jh-summary {{ font-size: 0.94rem; color: #374151; margin-top: 6px; line-height: 1.45; }}

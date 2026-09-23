@@ -1,0 +1,207 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>JobHunter Dashboard</title>
+  
+  <!-- Tailwind CSS -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  
+  <!-- React & ReactDOM -->
+  <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+  <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+  
+  <!-- Babel -->
+  <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+  
+  <!-- Framer Motion -->
+  <script src="https://unpkg.com/framer-motion@10.16.4/dist/framer-motion.js"></script>
+
+  <style>
+    /* Emil Kowalski / Better UI Polish */
+    :root {
+      --ease-out: cubic-bezier(0.23, 1, 0.32, 1);
+      --ease-in-out: cubic-bezier(0.77, 0, 0.175, 1);
+    }
+    
+    body {
+      background-color: #fafafa;
+      color: #111827;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      -webkit-font-smoothing: antialiased;
+    }
+    
+    /* Buttons should scale interactively (spring physics usually applied via Framer Motion, 
+       but CSS fallback for active states is good practice) */
+    button:active {
+      transform: scale(0.97);
+      transition: transform 0.1s var(--ease-out);
+    }
+    
+    /* Elegant soft shadow for depth */
+    .card-shadow {
+      box-shadow: 0 4px 20px oklch(0 0 0 / 0.05);
+      border: 1px solid oklch(0 0 0 / 0.05);
+    }
+  </style>
+</head>
+<body>
+  <div id="root"></div>
+  
+  <script type="text/babel">
+    const { useState, useEffect } = React;
+    const { motion, AnimatePresence } = window.Motion;
+
+    // A subtle pop-in animation wrapper
+    const Card = ({ children, delay = 0 }) => (
+      <motion.div 
+        initial={{ opacity: 0, y: 15, scale: 0.98 }}
+        animate={{ opacity: 1, y: 0, scale: 1 }}
+        transition={{ type: "spring", duration: 0.5, bounce: 0, delay }}
+        className="bg-white rounded-2xl p-6 card-shadow mb-4"
+      >
+        {children}
+      </motion.div>
+    );
+
+    // Beautiful badge component
+    const Badge = ({ children, className }) => (
+      <span className={`inline-flex items-center px-3 py-1 rounded-full text-xs font-semibold shadow-sm ${className}`}>
+        {children}
+      </span>
+    );
+
+    const App = () => {
+      const [jobs, setJobs] = useState([]);
+      const [status, setStatus] = useState({});
+      const [loading, setLoading] = useState(true);
+      const [filter, setFilter] = useState('All'); // All, Good, None
+
+      const fetchData = async () => {
+        try {
+          const [jobsRes, statusRes] = await Promise.all([
+            fetch('/api/jobs'),
+            fetch('/api/status')
+          ]);
+          setJobs(await jobsRes.json());
+          setStatus(await statusRes.json());
+        } catch (err) {
+          console.error(err);
+        } finally {
+          setLoading(false);
+        }
+      };
+
+      useEffect(() => {
+        fetchData();
+        const interval = setInterval(fetchData, 10000);
+        return () => clearInterval(interval);
+      }, []);
+
+      const handleFeedback = async (url, category) => {
+        // Optimistic update
+        setJobs(jobs.map(j => j.url === url ? { ...j, fb_cat: category, fb_label: category } : j));
+        await fetch('/api/feedback', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ url, category })
+        });
+      };
+
+      const runPipeline = async () => {
+        await fetch('/api/run_search', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({}) });
+        fetchData();
+      };
+
+      const displayedJobs = jobs.filter(j => {
+        if (j.fb_cat === 'location_restricted' || j.fb_cat === 'irrelevant_role' || j.fb_cat === 'expired') return false; // Hide completely bad
+        if (filter === 'Good' && j.fb_cat !== 'good_fit') return false;
+        if (filter === 'None' && j.fb_cat) return false;
+        return true;
+      }).reverse(); // Default to newest jobs (bottom of jsonl) first
+
+      return (
+        <div className="max-w-4xl mx-auto py-10 px-4">
+          <header className="flex justify-between items-center mb-8">
+            <div>
+              <h1 className="text-3xl font-bold tracking-tight">JobHunter</h1>
+              <p className="text-gray-500 mt-1">Found {status.new_jobs || 0} recent jobs • State: {status.task_state}</p>
+            </div>
+            <motion.button 
+              whileHover={{ scale: 1.02 }}
+              whileTap={{ scale: 0.97 }}
+              className="bg-blue-600 text-white px-5 py-2 rounded-xl font-medium shadow-[0_4px_14px_0_rgba(37,99,235,0.39)] transition-colors hover:bg-blue-700"
+              onClick={runPipeline}
+              disabled={status.task_state === 'Running'}
+            >
+              {status.task_state === 'Running' ? '⏳ Running...' : '▶ Run Pipeline'}
+            </motion.button>
+          </header>
+
+          <div className="flex gap-2 mb-6">
+            {['All', 'None', 'Good'].map(f => (
+              <button 
+                key={f}
+                onClick={() => setFilter(f)}
+                className={`px-4 py-1.5 rounded-full text-sm font-medium transition-colors ${filter === f ? 'bg-gray-800 text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'}`}
+              >
+                {f === 'None' ? 'Unmarked' : f}
+              </button>
+            ))}
+          </div>
+
+          {loading ? (
+            <div className="text-gray-400 text-center py-20 animate-pulse">Loading...</div>
+          ) : (
+            <div className="space-y-4">
+              <AnimatePresence>
+                {displayedJobs.slice(0, 50).map((job, idx) => (
+                  <Card key={job.url} delay={Math.min(idx * 0.05, 0.5)}>
+                    <div className="flex justify-between items-start">
+                      <div className="flex-1 pr-4">
+                        <a href={job.url} target="_blank" rel="noreferrer" className="text-lg font-bold text-gray-900 hover:text-blue-600 transition-colors inline-block mb-1">
+                          {job.title}
+                        </a>
+                        <div className="text-sm font-medium text-gray-500 mb-3">
+                          {job.company} • {job.location} • Fetched: {job.found} • Score: <span className="font-bold text-gray-900">{job.score}</span>
+                        </div>
+                        
+                        <div className="flex flex-wrap gap-2 mb-3">
+                          {job.is_freelance && <Badge className="bg-purple-100 text-purple-700">⚡ Freelance</Badge>}
+                          {job.tags && job.tags.split(',').map(t => t.trim()).filter(Boolean).map(t => (
+                            <Badge key={t} className="bg-blue-50 text-blue-700">{t}</Badge>
+                          ))}
+                        </div>
+                        
+                        <p className="text-gray-600 text-sm leading-relaxed line-clamp-3">
+                          {job.summary.split(' | ')[0]}
+                        </p>
+                      </div>
+                      
+                      <div className="flex flex-col gap-2 min-w-[140px]">
+                        {job.fb_cat === 'good_fit' ? (
+                          <Badge className="bg-green-100 text-green-700 self-end px-4 py-2">👍 Applied</Badge>
+                        ) : (
+                          <>
+                            <button onClick={() => handleFeedback(job.url, 'good_fit')} className="bg-green-50 text-green-700 hover:bg-green-100 px-3 py-1.5 rounded-lg text-sm font-medium transition-colors">👍 Good Fit</button>
+                            <button onClick={() => handleFeedback(job.url, 'irrelevant_role')} className="bg-gray-50 text-gray-600 hover:bg-gray-100 px-3 py-1.5 rounded-lg text-sm font-medium transition-colors">❌ Irrelevant</button>
+                            <button onClick={() => handleFeedback(job.url, 'location_restricted')} className="bg-red-50 text-red-600 hover:bg-red-100 px-3 py-1.5 rounded-lg text-sm font-medium transition-colors">📍 Location Rest.</button>
+                          </>
+                        )}
+                      </div>
+                    </div>
+                  </Card>
+                ))}
+              </AnimatePresence>
+            </div>
+          )}
+        </div>
+      );
+    };
+
+    const root = ReactDOM.createRoot(document.getElementById('root'));
+    root.render(<App />);
+  </script>
+</body>
+</html>

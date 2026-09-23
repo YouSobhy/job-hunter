@@ -320,6 +320,61 @@ def search_query(query: str, serpapi_key, cse_key, cx) -> list[Job]:
     return out
 
 
+# -- Direct Company ATS Boards --------------------------------------------------
+
+DIRECT_COMPANY_BOARDS = [
+    ("Canonical", "gh", "https://boards-api.greenhouse.io/v1/boards/canonical/jobs?content=true"),
+    ("GitLab", "gh", "https://boards-api.greenhouse.io/v1/boards/gitlab/jobs?content=true"),
+    ("Supabase", "ashby", "https://api.ashbyhq.com/posting-api/job-board/supabase"),
+    ("Metabase", "lever", "https://api.lever.co/v0/postings/metabase"),
+    ("Blockstream", "ashby", "https://api.ashbyhq.com/posting-api/job-board/blockstream"),
+    ("EverAI", "ashby", "https://api.ashbyhq.com/posting-api/job-board/everai"),
+    ("Trust Wallet", "ashby", "https://api.ashbyhq.com/posting-api/job-board/trust-wallet"),
+]
+
+
+def fetch_direct_company_boards(terms: list[str]) -> list[Job]:
+    target_terms = [t.lower() for t in terms]
+    out: list[Job] = []
+
+    for comp_name, ats_type, url in DIRECT_COMPANY_BOARDS:
+        data = fetch_json(url)
+        if not data:
+            continue
+
+        items = data if isinstance(data, list) else data.get("jobs", data.get("postings", []))
+        for j in items:
+            title = j.get("title", "")
+            title_l = title.lower()
+
+            # Include target roles & relevant support/specialist/manager/coordinator roles
+            matches = any(tt in title_l for tt in target_terms) or any(
+                k in title_l for k in (
+                    "implementation", "onboarding", "integration", "support",
+                    "customer success", "operations", "coordinator", "specialist"
+                )
+            )
+            if not matches:
+                continue
+
+            job_url = j.get("absolute_url") or j.get("hostedUrl") or j.get("jobUrl") or j.get("url") or url
+            loc = j.get("location", {})
+            loc_name = loc.get("name") if isinstance(loc, dict) else str(loc or "Worldwide Remote")
+
+            out.append(Job(
+                source=f"Direct ({comp_name})",
+                title=title,
+                url=job_url,
+                company=comp_name,
+                location=loc_name,
+                posted=datetime.now().strftime("%Y-%m-%d"),
+                description="",
+                needs_fetch=True,
+            ))
+
+    return out
+
+
 def gather_all(cfg: Config, include_wwr: bool = True, include_freelance: bool = True) -> list[Job]:
     """All sources, raw. Throttles between search queries."""
     engine, serpapi_key, cse_key, cx = pick_engine()
@@ -327,6 +382,12 @@ def gather_all(cfg: Config, include_wwr: bool = True, include_freelance: bool = 
     print(f"  Search: {engine}")
 
     jobs: list[Job] = []
+
+    print("\n--- Direct Worldwide Remote Companies (ATS) ---")
+    direct_jobs = fetch_direct_company_boards(cfg.remotive_terms)
+    print(f"[>] Fetched {len(direct_jobs)} direct company role candidates")
+    jobs.extend(direct_jobs)
+
     print("\n--- Remotive ---")
     for term in cfg.remotive_terms:
         print(f"[>] {term}")
