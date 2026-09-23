@@ -53,7 +53,11 @@ def route_run_search():
 
 @flask_app.route("/")
 def route_index():
-    return flask.send_file("ui/index.html")
+    resp = flask.send_file("ui/index.html")
+    resp.headers["Cache-Control"] = "no-cache, no-store, must-revalidate"
+    resp.headers["Pragma"] = "no-cache"
+    resp.headers["Expires"] = "0"
+    return resp
 
 @https_fn.on_request(
     cors=options.CorsOptions(cors_origins=["*"], cors_methods=["*"]),
