@@ -49,7 +49,93 @@ def route_feedback():
 
 @flask_app.route("/api/run_search", methods=["POST"])
 def route_run_search():
+    import threading
+    req = flask.request.json or {}
+    terms = req.get("terms")
+    
+    def background_run():
+        if is_cloud():
+            pull_files(BASE_DIR)
+        run.main(terms=terms)
+        if is_cloud():
+            push_files(BASE_DIR)
+            
+    threading.Thread(target=background_run).start()
     return flask.jsonify({"status": "started"})
+
+@flask_app.route("/api/telegram_webhook", methods=["POST"])
+def route_telegram_webhook():
+    import threading
+    from jobhunter.telegram import load_telegram, api_call, format_job
+    from jobhunter.results import load_jobs
+    
+    cfg = load_telegram()
+    token = cfg.get("bot_token")
+    if not token:
+        return flask.jsonify({"status": "ok"})
+        
+    req = flask.request.json or {}
+    msg = req.get("message") or {}
+    chat_id = (msg.get("chat") or {}).get("id")
+    text = (msg.get("text") or "").strip()
+    
+    if not chat_id or not text:
+        return flask.jsonify({"status": "ok"})
+        
+    owner = cfg.get("chat_id")
+    if chat_id != owner:
+        return flask.jsonify({"status": "ok"})
+        
+    def send(t):
+        try:
+            api_call(token, "sendMessage", {"chat_id": chat_id, "text": t, "disable_web_page_preview": "true"})
+        except Exception:
+            pass
+
+    cmd, _, arg = text.partition(" ")
+    cmd = cmd.split("@")[0].lower()
+    
+    def background_run(terms=None):
+        if is_cloud():
+            pull_files(BASE_DIR)
+        run.main(terms=terms)
+        if is_cloud():
+            push_files(BASE_DIR)
+            
+    if cmd == "/run":
+        send("Run started - I'll report when it finishes.")
+        threading.Thread(target=background_run).start()
+    elif cmd == "/search":
+        arg = arg.strip()
+        if not arg:
+            send("Usage: /search hr analyst; payroll lead")
+            return flask.jsonify({"status": "ok"})
+        from jobhunter.searches import parse_terms
+        terms = parse_terms(arg)
+        if not terms:
+            send("Couldn't parse any titles from that.")
+            return flask.jsonify({"status": "ok"})
+        send(f"Custom search for: {', '.join(terms)} started - I'll report when it finishes.")
+        threading.Thread(target=lambda: background_run(terms)).start()
+    elif cmd == "/status":
+        from jobhunter.notify import read_status
+        s = read_status()
+        lines = [
+            f"Last run    : {(s.get('last_run') or 'never')[:16].replace('T', ' ')}",
+            f"New jobs    : {s.get('new_jobs', '-')}",
+        ]
+        send("\n".join(lines))
+    elif cmd == "/last":
+        jobs = load_jobs()
+        if not jobs:
+            send("No jobs in the store yet.")
+        else:
+            for e in jobs[-3:]:
+                send(format_job(e))
+    else:
+        send("/run - fire search now\n/search t1; t2 - custom search\n/status - run info\n/last - recent jobs")
+        
+    return flask.jsonify({"status": "ok"})
 
 @flask_app.route("/")
 def route_index():

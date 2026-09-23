@@ -110,8 +110,16 @@
       };
 
       const runPipeline = async () => {
-        await fetch('/api/run_search', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({}) });
-        fetchData();
+        const terms = window.prompt("Enter custom search terms (comma separated), or leave blank for a standard run:");
+        if (terms === null) return; // Cancelled
+        
+        let body = {};
+        if (terms.trim() !== "") {
+            body.terms = terms.split(',').map(t => t.trim());
+        }
+        
+        await fetch('/api/run_search', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+        setStatus({ ...status, task_state: 'Running' });
       };
 
       const displayedJobs = jobs.filter(j => {
