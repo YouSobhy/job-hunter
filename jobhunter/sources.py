@@ -15,6 +15,7 @@ from datetime import datetime
 
 from .config import Config, load_cse_creds, load_serpapi_key
 from .models import Job
+from .linkedin import gather_linkedin
 
 log = logging.getLogger("jobhunter")
 
@@ -417,5 +418,12 @@ def gather_all(cfg: Config, include_wwr: bool = True, include_freelance: bool = 
             time.sleep(1)
         elif not cse_key:
             time.sleep(4)  # heavier throttle for DDG
+            
+    print("\n--- LinkedIn (Guest API) ---")
+    for term in cfg.remotive_terms:
+        print(f"[>] {term}")
+        jobs.extend(gather_linkedin(term))
+        time.sleep(1)
+
     return jobs
 

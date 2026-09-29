@@ -107,6 +107,15 @@ def run_search(req: RunReq, bg: BackgroundTasks):
     bg.add_task(fire_run, req.terms)
     return {"status": "started"}
 
+class DraftReq(BaseModel):
+    job_description: str
+
+@app.post("/api/draft_application")
+def post_draft_application(req: DraftReq):
+    from jobhunter.application_agent import draft_application
+    draft = draft_application(req.job_description)
+    return {"latex_resume": draft.latex_resume, "markdown_cover_letter": draft.markdown_cover_letter, "critique_feedback": draft.critique_feedback}
+
 @app.get("/")
 def serve_ui():
     return FileResponse("ui/index.html")

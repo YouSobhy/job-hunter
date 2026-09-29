@@ -99,6 +99,28 @@
         return () => clearInterval(interval);
       }, []);
 
+      const [draftingUrl, setDraftingUrl] = useState(null);
+
+      const handleDraftApplication = async (job) => {
+        setDraftingUrl(job.url);
+        alert("🚀 Starting AI Drafter-Reviewer for " + job.company + "...\nThis will take a few moments.");
+        try {
+          const res = await fetch('/api/draft_application', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ job_description: job.title + " at " + job.company + "\n\n" + job.summary })
+          });
+          const data = await res.json();
+          console.log("DRAFT RESULT:", data);
+          alert("✅ Draft Complete!\n\nCritique Feedback:\n" + data.critique_feedback + "\n\n(Press F12 to view the full LaTeX resume and Markdown Cover Letter in the console logs)");
+        } catch(e) {
+          alert("❌ Failed to draft application");
+          console.error(e);
+        } finally {
+          setDraftingUrl(null);
+        }
+      };
+
       const handleFeedback = async (url, category) => {
         // Optimistic update
         setJobs(jobs.map(j => j.url === url ? { ...j, fb_cat: category, fb_label: category } : j));
@@ -195,6 +217,9 @@
                           <Badge className="bg-green-100 text-green-700 self-end px-4 py-2">👍 Applied</Badge>
                         ) : (
                           <>
+                            <button onClick={() => handleDraftApplication(job)} disabled={draftingUrl === job.url} className="bg-blue-600 text-white hover:bg-blue-700 disabled:opacity-50 px-3 py-1.5 rounded-lg text-sm font-medium transition-colors shadow-sm">
+                              {draftingUrl === job.url ? '⏳ Drafting...' : '🚀 Auto-Apply'}
+                            </button>
                             <button onClick={() => handleFeedback(job.url, 'good_fit')} className="bg-green-50 text-green-700 hover:bg-green-100 px-3 py-1.5 rounded-lg text-sm font-medium transition-colors">👍 Good Fit</button>
                             <button onClick={() => handleFeedback(job.url, 'irrelevant_role')} className="bg-gray-50 text-gray-600 hover:bg-gray-100 px-3 py-1.5 rounded-lg text-sm font-medium transition-colors">❌ Irrelevant</button>
                             <button onClick={() => handleFeedback(job.url, 'location_restricted')} className="bg-red-50 text-red-600 hover:bg-red-100 px-3 py-1.5 rounded-lg text-sm font-medium transition-colors">📍 Location Rest.</button>

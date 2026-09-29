@@ -63,6 +63,14 @@ def route_run_search():
     threading.Thread(target=background_run).start()
     return flask.jsonify({"status": "started"})
 
+@flask_app.route("/api/draft_application", methods=["POST"])
+def route_draft_application():
+    from api import post_draft_application, DraftReq
+    req_json = flask.request.json or {}
+    req = DraftReq(job_description=req_json.get("job_description", ""))
+    resp = post_draft_application(req)
+    return flask.jsonify(resp)
+
 @flask_app.route("/api/telegram_webhook", methods=["POST"])
 def route_telegram_webhook():
     import threading
