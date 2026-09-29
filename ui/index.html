@@ -78,6 +78,8 @@
       const [loading, setLoading] = useState(true);
       const [filter, setFilter] = useState('All'); // All, Good, None
 
+      const isManualRunning = React.useRef(false);
+
       const fetchData = async () => {
         try {
           const [jobsRes, statusRes] = await Promise.all([
@@ -85,7 +87,10 @@
             fetch('/api/status')
           ]);
           setJobs(await jobsRes.json());
-          setStatus(await statusRes.json());
+          
+          if (!isManualRunning.current) {
+            setStatus(await statusRes.json());
+          }
         } catch (err) {
           console.error(err);
         } finally {
@@ -158,10 +163,12 @@
             body.terms = terms.split(',').map(t => t.trim());
         }
         
+        isManualRunning.current = true;
         setStatus(prev => ({ ...prev, task_state: 'Running' }));
         try {
           await fetch('/api/run_search', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
         } finally {
+          isManualRunning.current = false;
           fetchData();
         }
       };
