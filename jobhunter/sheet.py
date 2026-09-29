@@ -85,5 +85,5 @@ def make_row(job, verdict) -> list:
         ", ".join(tags),
         job.url,
         "",
-        f"{verdict.summary} | {verdict.reason}",
+        " | ".join(verdict.strengths) + " || Gaps: " + " | ".join(verdict.gaps),
     ]

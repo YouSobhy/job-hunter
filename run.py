@@ -133,12 +133,12 @@ def main(dry_run: bool = False, max_llm: int | None = None,
         ok = (
             v.fit_score >= cfg.fit_threshold
             and v.geo == "eligible"
-            and v.language_ok
+            and v.language_gate != "FAIL"
             and v.role_type_ok
+            and not v.relocation_required
         )
         mark = "ACCEPT" if ok else "reject"
         print(f"  [{mark}] {v.fit_score}/10 geo={v.geo:<10} {j.title[:55]}")
-        print(f"           {v.reason[:100]}")
         if ok:
             accepted.append((j, v))
 
@@ -177,7 +177,12 @@ def main(dry_run: bool = False, max_llm: int | None = None,
             "location": v.location_stated, "source": j.source,
             "posted": j.posted, "score": v.fit_score,
             "tags": ", ".join(j.tags + (["GEO?"] if v.geo == "unclear" else [])),
-            "url": j.url, "summary": f"{v.summary} | {v.reason}",
+            "url": j.url, 
+            "language_gate": v.language_gate,
+            "language_note": v.language_note,
+            "mass_posting_flag": v.mass_posting_flag,
+            "strengths": v.strengths,
+            "gaps": v.gaps
         }
         for j, v in accepted
     ]

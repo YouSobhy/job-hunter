@@ -63,10 +63,11 @@ def send_message(text: str, chat_id=None, token: str | None = None) -> bool:
 
 def format_job(e: dict) -> str:
     tags = f" [{e['tags']}]" if e.get("tags") else ""
+    str_txt = " • " + "\n • ".join(e.get("strengths", [])) if e.get("strengths") else ""
     return (
         f"{e['title']} — {e['company']}\n"
         f"fit {e['score']}/10 | {e['location']}{tags}\n"
-        f"{e.get('summary', '')}\n"
+        f"{str_txt}\n"
         f"{e['url']}"
     )
 

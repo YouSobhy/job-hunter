@@ -108,7 +108,7 @@
           const res = await fetch('/api/draft_application', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ job_description: job.title + " at " + job.company + "\n\n" + job.summary })
+            body: JSON.stringify({ job_description: job.title + " at " + job.company + "\n\nStrengths:\n" + (job.strengths || []).join("\n") + "\n\nGaps:\n" + (job.gaps || []).join("\n") })
           });
           const data = await res.json();
           console.log("DRAFT RESULT:", data);
@@ -224,14 +224,26 @@
                         
                         <div className="flex flex-wrap gap-2 mb-3">
                           {job.is_freelance && <Badge className="bg-purple-100 text-purple-700">⚡ Freelance</Badge>}
+                          {job.mass_posting_flag && <Badge className="bg-red-100 text-red-700">🚩 Mass-Posting</Badge>}
+                          {job.language_gate === 'FAIL' && <Badge className="bg-red-100 text-red-700">⛔ Language Required</Badge>}
+                          {job.language_gate === 'FLAG' && <Badge className="bg-orange-100 text-orange-700">⚠️ Language Flag</Badge>}
                           {job.tags && job.tags.split(',').map(t => t.trim()).filter(Boolean).map(t => (
                             <Badge key={t} className="bg-blue-50 text-blue-700">{t}</Badge>
                           ))}
                         </div>
                         
-                        <p className="text-gray-600 text-sm leading-relaxed line-clamp-3">
-                          {job.summary.split(' | ')[0]}
-                        </p>
+                        <div className="text-gray-600 text-sm leading-relaxed mt-2 space-y-1">
+                          {job.strengths && job.strengths.length > 0 && (
+                              <ul className="list-disc pl-5">
+                                {job.strengths.map((s, i) => <li key={`str-${i}`}>{s}</li>)}
+                              </ul>
+                          )}
+                          {job.gaps && job.gaps.length > 0 && (
+                              <ul className="list-disc pl-5 text-gray-500 mt-1">
+                                {job.gaps.map((s, i) => <li key={`gap-${i}`}>Gap: {s}</li>)}
+                              </ul>
+                          )}
+                        </div>
                       </div>
                       
                       <div className="flex flex-col gap-2 min-w-[140px]">

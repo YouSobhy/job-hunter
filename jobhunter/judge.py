@@ -25,12 +25,15 @@ log = logging.getLogger("jobhunter")
 class Verdict(BaseModel):
     fit_score: int  # 0-10 vs the candidate profile
     geo: Literal["eligible", "ineligible", "unclear"]
-    language_ok: bool
     role_type_ok: bool
     company: str          # real company name as stated on the page
     location_stated: str  # what the posting actually says, e.g. "Remote - EMEA"
-    reason: str           # one line: why accepted/rejected
-    summary: str          # one-line job summary for the sheet
+    language_gate: Literal["PASS", "FAIL", "FLAG"]
+    language_note: str
+    mass_posting_flag: bool
+    relocation_required: bool
+    strengths: list[str]
+    gaps: list[str]
 
 
 class JudgeUnavailable(Exception):
@@ -42,35 +45,27 @@ def build_system_prompt(cfg: Config) -> str:
 
 {cfg.profile}
 
-Judge each posting on:
+Judge each posting against the candidate's profile based on the following criteria:
 
-1. fit_score (0-10): 8-10 = core target role for this profile; 5-7 = adjacent role
-   (e.g. account manager with heavy onboarding duties); 0-4 = wrong role
-   (engineering, design, quota-carrying sales, marketing, recruiting, etc. —
-   also set role_type_ok=false for those).
+1. fit_score (0-10): 8-10 = core target role for this profile; 5-7 = adjacent role; 0-4 = wrong role.
+   Also set role_type_ok=false for wrong roles.
 
-2. geo: "eligible" ONLY if an international candidate residing in Egypt (UTC+2) can actually be hired —
-   i.e. the posting explicitly states Worldwide, Global, Remote Anywhere, EMEA, Middle East, Africa, or Egypt.
-   "ineligible" if:
-   - The posting is located in or restricted to ANY single specific country/city outside Egypt (e.g. India/New Delhi, US, EU, UK, Canada, Philippines, Germany, LatAm, Australia, etc.) UNLESS it explicitly states that candidates from outside that country (Worldwide/EMEA/Egypt) are eligible.
-   - The posting requires local work authorization, visa, citizenship, or residency in a country outside Egypt (e.g. W-2, Green Card, India PF, UK Right to Work).
-   - The posting offers benefits tied exclusively to a foreign country (e.g. US 401k, UK NHS, India PF/Gratuity).
+2. geo: "eligible" ONLY if an international candidate residing in Egypt (UTC+2) can be hired.
+   "ineligible" if it is strictly located in a foreign country without global/EMEA remote options, requires foreign work authorization, or offers exclusively foreign benefits.
    "unclear" if location eligibility is not specified.
-   Be extremely strict: a job located in "New Delhi, India" or "Austin, TX" or "London, UK" without explicit global/EMEA remote eligibility MUST be marked "ineligible".
 
-3. language_ok: false if fluency in any language other than English or Arabic is
-   required (e.g. German postings marked "(m/w/d)" that require German, "French +
-   English", etc.).
+3. language_gate: 
+   - "PASS" if the required languages match the candidate's profile (Arabic/English).
+   - "FAIL" if the job requires a completely undeclared language (e.g., German, Spanish). Force fit_score to 0 if FAIL.
+   - "FLAG" if it requires a declared language but at a much higher proficiency than the candidate has.
+   Provide a brief `language_note` for FAIL/FLAG cases, or empty string if PASS.
 
-4. role_type_ok: false if the role is actually engineering/development, design,
-   quota-carrying sales, marketing, or otherwise outside the profile's target roles.
+4. mass_posting_flag: set to true ONLY if the posting states it is hiring identically across multiple different cities (e.g., "Frontend Developer (posted in 6 cities)").
 
-Also extract:
-- company: the real company name as stated on the page (not the job board name).
-- location_stated: the location text exactly as the posting states it (e.g.
-  "Remote - EMEA", "Austin, TX", "New Delhi, India"). Use "Not stated" if absent.
-- reason: one sentence explaining the verdict.
-- summary: one sentence describing the job itself. Reply in valid JSON format matching the schema."""
+5. relocation_required: set to true ONLY if the posting explicitly requires relocation to a different city/country or working in-office outside of Egypt.
+
+6. Extract the real `company` name and `location_stated` from the text.
+7. Provide `strengths` (1-3 bullet points of why they fit) and `gaps` (1-3 bullet points of what they lack). Reply in valid JSON format matching the schema."""
 
 
 def _truncate(text: str, cfg: Config) -> str:
