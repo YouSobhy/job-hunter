@@ -112,7 +112,25 @@
           });
           const data = await res.json();
           console.log("DRAFT RESULT:", data);
-          alert("✅ Draft Complete!\n\nCritique Feedback:\n" + data.critique_feedback + "\n\n(Press F12 to view the full LaTeX resume and Markdown Cover Letter in the console logs)");
+          
+          const downloadFile = (content, filename, type) => {
+            const blob = new Blob([content], { type });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = filename;
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+            URL.revokeObjectURL(url);
+          };
+
+          const safeCompany = (job.company || "Company").replace(/[^a-z0-9]/gi, '_');
+          downloadFile(data.latex_resume, `Resume_${safeCompany}.tex`, 'text/plain');
+          downloadFile(data.markdown_cover_letter, `CoverLetter_${safeCompany}.md`, 'text/markdown');
+          downloadFile(data.critique_feedback, `Critique_${safeCompany}.txt`, 'text/plain');
+
+          alert("✅ Draft Complete! The files (Resume.tex, CoverLetter.md, and Critique.txt) have been downloaded.");
         } catch(e) {
           alert("❌ Failed to draft application");
           console.error(e);
@@ -140,8 +158,12 @@
             body.terms = terms.split(',').map(t => t.trim());
         }
         
-        await fetch('/api/run_search', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
-        setStatus({ ...status, task_state: 'Running' });
+        setStatus(prev => ({ ...prev, task_state: 'Running' }));
+        try {
+          await fetch('/api/run_search', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+        } finally {
+          fetchData();
+        }
       };
 
       const displayedJobs = jobs.filter(j => {

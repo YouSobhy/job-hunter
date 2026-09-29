@@ -49,19 +49,19 @@ def route_feedback():
 
 @flask_app.route("/api/run_search", methods=["POST"])
 def route_run_search():
-    import threading
     req = flask.request.json or {}
     terms = req.get("terms")
     
-    def background_run():
-        if is_cloud():
-            pull_files(BASE_DIR)
+    if is_cloud():
+        pull_files(BASE_DIR)
+        
+    try:
         run.main(terms=terms)
+    finally:
         if is_cloud():
             push_files(BASE_DIR)
             
-    threading.Thread(target=background_run).start()
-    return flask.jsonify({"status": "started"})
+    return flask.jsonify({"status": "completed"})
 
 @flask_app.route("/api/draft_application", methods=["POST"])
 def route_draft_application():
@@ -156,7 +156,7 @@ def route_index():
 @https_fn.on_request(
     cors=options.CorsOptions(cors_origins=["*"], cors_methods=["*"]),
     memory=options.MemoryOption.GB_1,
-    timeout_sec=120
+    timeout_sec=540
 )
 def api(request: https_fn.Request) -> https_fn.Response:
     with flask_app.request_context(request.environ):

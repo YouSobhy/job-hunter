@@ -43,15 +43,19 @@ def fire_run(terms=None):
 @app.get("/api/status")
 def get_status():
     status = read_status()
-    try:
-        out = subprocess.run(
-            ["powershell", "-NoProfile", "-Command", f"(Get-ScheduledTask -TaskName {TASK_NAME}).State"],
-            capture_output=True, text=True, timeout=15, creationflags=_NO_WINDOW,
-        )
-        state = out.stdout.strip() or "Unknown"
-    except Exception:
-        state = "Unknown"
-    status["task_state"] = state
+    if is_cloud():
+        # Cloud environments do not have the Windows scheduled task
+        status["task_state"] = "Idle"
+    else:
+        try:
+            out = subprocess.run(
+                ["powershell", "-NoProfile", "-Command", f"(Get-ScheduledTask -TaskName {TASK_NAME}).State"],
+                capture_output=True, text=True, timeout=15, creationflags=_NO_WINDOW,
+            )
+            state = out.stdout.strip() or "Unknown"
+        except Exception:
+            state = "Unknown"
+        status["task_state"] = state
     return status
 
 @app.get("/api/jobs")
