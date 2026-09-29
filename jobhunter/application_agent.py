@@ -20,14 +20,20 @@ def draft_application(job_description: str) -> ApplicationDraft:
     if not gemini_key:
         raise ValueError("No Gemini key found. Cannot run the Application Agent.")
 
+    from .config import BASE_DIR
+    base_resume_path = BASE_DIR / "base_resume.md"
+    base_resume_text = ""
+    if base_resume_path.exists():
+        base_resume_text = "\n\nCandidate's Base CV (Detailed Timeline and Experience):\n" + base_resume_path.read_text(encoding="utf-8")
+
     client = genai.Client(api_key=gemini_key)
     model_name = "gemini-3.1-pro" # Using the pro model for complex reasoning and LaTeX formatting
     
     system_prompt = f"""You are an expert technical recruiter and AI agent executing a Drafter-Reviewer workflow.
 Your goal is to write a highly tailored resume (in valid LaTeX, using moderncv or article class) and a Cover Letter (in Markdown) for a specific job.
 
-Here is the candidate's profile:
-{cfg.profile}
+Here is the candidate's profile summary:
+{cfg.profile}{base_resume_text}
 
 Instructions:
 1. Review the Job Description.
