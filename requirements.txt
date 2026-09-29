@@ -15,3 +15,5 @@ uvicorn
 firebase-functions
 firebase-admin
 a2wsgi
+Flask
+Flask-Cors
