@@ -57,6 +57,13 @@ def route_run_search():
         
     try:
         run.main(terms=terms)
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        from jobhunter import notify, telegram
+        notify.write_status(success=False, error=f"{type(e).__name__}: {e}")
+        telegram.notify_run([], error=f"{type(e).__name__}: {e}")
+        return flask.jsonify({"status": "error", "message": str(e)}), 500
     finally:
         if is_cloud():
             push_files(BASE_DIR)
@@ -106,9 +113,17 @@ def route_telegram_webhook():
     def background_run(terms=None):
         if is_cloud():
             pull_files(BASE_DIR)
-        run.main(terms=terms)
-        if is_cloud():
-            push_files(BASE_DIR)
+        try:
+            run.main(terms=terms)
+        except Exception as e:
+            import traceback
+            traceback.print_exc()
+            from jobhunter import notify, telegram
+            notify.write_status(success=False, error=f"{type(e).__name__}: {e}")
+            telegram.notify_run([], error=f"{type(e).__name__}: {e}")
+        finally:
+            if is_cloud():
+                push_files(BASE_DIR)
             
     if cmd == "/run":
         send("Run started - I'll report when it finishes.")
@@ -170,5 +185,13 @@ def api(request: https_fn.Request) -> https_fn.Response:
 )
 def daily_job_fetch(event: scheduler_fn.ScheduledEvent) -> None:
     pull_files(BASE_DIR)
-    run.main()
-    push_files(BASE_DIR)
+    try:
+        run.main()
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        from jobhunter import notify, telegram
+        notify.write_status(success=False, error=f"{type(e).__name__}: {e}")
+        telegram.notify_run([], error=f"{type(e).__name__}: {e}")
+    finally:
+        push_files(BASE_DIR)
